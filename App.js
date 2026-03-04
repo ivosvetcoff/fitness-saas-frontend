@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView,
-  Platform, ScrollView, LayoutAnimation, UIManager, Image
+  Platform, ScrollView, LayoutAnimation, UIManager, Image, Linking
 } from 'react-native';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
@@ -17,10 +17,54 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const BACKEND_URL = 'http://192.168.21.180:8000';
+// API BASE URL - Cambiado a la IP de la computadora para probar desde el celular
+const BACKEND_URL = 'http://192.168.20.229:8000';
 
 // Mapa de imágenes de ejercicios (nombre exacto de la DB → asset local)
 const EXERCISE_IMAGES = {
+  // === Plan real de Ivo (Team Pato – 5 Días) ===
+  // DÍA 1
+  'Vuelos Laterales Sentado': require('./assets/exercises/vuelos_laterales.png'),
+  'Press Banco Plano con Barra': require('./assets/exercises/press_de_banca.png'),
+  'Press Inclinado en Smith': require('./assets/exercises/press_smith_inclinado.png'),
+  'Pec Deck (Mariposa)': require('./assets/exercises/pec_deck.png'),
+  'Curl en Banco Scott': require('./assets/exercises/curl_scott.png'),
+  'Curl Bayesiano en Polea': require('./assets/exercises/curl_bayesiano.png'),
+  'Elevaciones Colgado': require('./assets/exercises/elevaciones_colgado.png'),
+  // DÍA 2
+  'Curl Femoral': require('./assets/exercises/curl_femoral.png'),
+  'Peso Muerto con Barra': require('./assets/exercises/peso_muerto.png'),
+  'Sentadilla Sumo en Máquina': require('./assets/exercises/sentadilla_sumo.png'),
+  'Sentadilla Búlgara': require('./assets/exercises/sentadilla_bulgara.png'),
+  'Extensión de Cuádriceps': require('./assets/exercises/extension_cuadriceps.png'),
+  'Pantorrillas Sentado': require('./assets/exercises/pantorrillas_sentado.png'),
+  'Crunch en Polea': require('./assets/exercises/crunch_polea.png'),
+  // DÍA 3
+  'Pullover con Cuerda en Polea': require('./assets/exercises/pullover_polea.png'),
+  'Hammer Alto Unilateral': require('./assets/exercises/hammer_alto.png'),
+  'Remo T-Bar Agarre Abierto': require('./assets/exercises/remo_tbar.png'),
+  'Posteriores en Mariposa': require('./assets/exercises/posteriores_mariposa.png'),
+  'Vuelos Laterales en Máquina': require('./assets/exercises/vuelos_laterales_maquina.png'),
+  'Empuje de Tríceps': require('./assets/exercises/empuje_triceps.png'),
+  'Press Francés': require('./assets/exercises/press_frances.png'),
+  // DÍA 4
+  'Aductores en Máquina': require('./assets/exercises/sentadilla_sumo.png'),
+  'Sentadilla en Smith': require('./assets/exercises/press_smith_inclinado.png'),
+  'Prensa de Piernas': require('./assets/exercises/prensa_piernas.png'),
+  'Estocada Caminando': require('./assets/exercises/sentadilla_bulgara.png'),
+  'Pantorrillas de Pie': require('./assets/exercises/pantorrillas_sentado.png'),
+  // DÍA 5
+  'Vuelos Laterales en Polea': require('./assets/exercises/vuelos_laterales.png'),
+  'Press Militar en Smith': require('./assets/exercises/press_militar.png'),
+  'Posteriores en Cable': require('./assets/exercises/posteriores_mariposa.png'),
+  'Banco Plano con Mancuernas': require('./assets/exercises/press_de_banca.png'),
+  'Cruces de Polea': require('./assets/exercises/pec_deck.png'),
+  'Martillo Alternado': require('./assets/exercises/curl_biceps.png'),
+  'Extensiones con Cuerda': require('./assets/exercises/extension_triceps.png'),
+  'Fondos Libres': require('./assets/exercises/extension_triceps.png'),
+  'Banco Inclinado Crunch': require('./assets/exercises/crunch_polea.png'),
+  'Rodilla al Pecho': require('./assets/exercises/elevaciones_colgado.png'),
+  // === Legacy (compatibilidad con ejercicios anteriores) ===
   'Sentadilla con Barra': require('./assets/exercises/sentadilla_con_barra.png'),
   'Press de Banca': require('./assets/exercises/press_de_banca.png'),
   'Peso Muerto Convencional': require('./assets/exercises/peso_muerto.png'),
@@ -29,20 +73,17 @@ const EXERCISE_IMAGES = {
   'Dominadas': require('./assets/exercises/dominadas.png'),
   'Curl de Bíceps': require('./assets/exercises/curl_biceps.png'),
   'Extensión de Tríceps': require('./assets/exercises/extension_triceps.png'),
-  'Sentadilla Búlgara': require('./assets/exercises/sentadilla_bulgara.png'),
   'Hip Thrust': require('./assets/exercises/hip_thrust.png'),
   'Face Pull': require('./assets/exercises/face_pull.png'),
   'Press Inclinado con Mancuernas': require('./assets/exercises/press_inclinado.png'),
   'Peso Muerto Rumano': require('./assets/exercises/peso_muerto_rumano.png'),
-  'Extensión de Cuádriceps': require('./assets/exercises/extension_cuadriceps.png'),
-  'Prensa de Piernas': require('./assets/exercises/prensa_piernas.png'),
 };
 
 export default function App() {
   // =====================================================
   // ESTADO GLOBAL
   // =====================================================
-  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'workout' | 'progress' | 'profile'
+  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'workout' | 'progress' | 'nutrition' | 'profile'
   const [sessionData, setSessionData] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
@@ -63,6 +104,14 @@ export default function App() {
   const [showXpFlash, setShowXpFlash] = useState(false);
   const [rankings, setRankings] = useState([]);
   const [loadingRankings, setLoadingRankings] = useState(false);
+
+  // Nutrition plan
+  const [nutritionPlan, setNutritionPlan] = useState(null);
+  const [loadingNutrition, setLoadingNutrition] = useState(false);
+  const [expandedMeal, setExpandedMeal] = useState(null);
+
+  // Day selection
+  const [selectedDay, setSelectedDay] = useState(null);
 
   const today = new Date().toLocaleDateString('es-ES', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -88,22 +137,28 @@ export default function App() {
           current_day: response.data.current_day,
           total_days: response.data.total_days
         });
-        const loadedExercises = response.data.exercises.map((ex) => ({
+
+        // Fetch ALL exercises for this routine instead of just the next workout
+        const allResp = await axios.get(`${BACKEND_URL}/routines/${response.data.routine_id}/exercises`);
+        const allLoadedExercises = allResp.data.map((ex) => ({
           id: ex.exercise_id,
+          routine_id: ex.routine_id,
           name: ex.exercises?.name || `Ejercicio ${ex.exercise_id.substring(0, 4)}`,
           muscleGroup: ex.exercises?.muscle_group || '',
           targetSets: ex.sets || 3,
           setsCompleted: 0,
+          day_number: ex.day_number,
           image: EXERCISE_IMAGES[ex.exercises?.name] || null,
         }));
-        setExercises(loadedExercises);
+        // Sort by day and id to stay consistent
+        setExercises(allLoadedExercises.sort((a, b) => a.day_number - b.day_number));
       }
     } catch (error) {
       console.error("Error fetching exercises:", error);
     }
   };
 
-  useEffect(() => { fetchExercises(); fetchMyPoints(); }, []);
+  useEffect(() => { fetchExercises(); fetchMyPoints(); fetchNutritionPlan(); }, []);
 
   // Fetch student XP points
   const fetchMyPoints = async () => {
@@ -125,6 +180,19 @@ export default function App() {
       console.error('Error fetching rankings:', error);
     } finally {
       setLoadingRankings(false);
+    }
+  };
+
+  // Fetch nutrition plan
+  const fetchNutritionPlan = async () => {
+    setLoadingNutrition(true);
+    try {
+      const response = await axios.get(`${BACKEND_URL}/student/${STUDENT_ID}/nutrition`);
+      setNutritionPlan(response.data);
+    } catch (error) {
+      console.error('Error fetching nutrition:', error);
+    } finally {
+      setLoadingNutrition(false);
     }
   };
 
@@ -239,7 +307,7 @@ export default function App() {
       <TouchableOpacity
         style={styles.mainCard}
         activeOpacity={0.85}
-        onPress={() => setCurrentScreen('workout')}
+        onPress={() => { setSelectedDay(null); setCurrentScreen('workout'); }}
       >
         <View style={styles.mainCardIcon}>
           <Dumbbell color="#FAFAFA" size={28} />
@@ -279,168 +347,263 @@ export default function App() {
         <ChevronDown color="#52525B" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
       </TouchableOpacity>
 
+      {/* TARJETA: NUTRICIÓN */}
+      <TouchableOpacity
+        style={styles.mainCard}
+        activeOpacity={0.85}
+        onPress={() => setCurrentScreen('nutrition')}
+      >
+        <View style={[styles.mainCardIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+          <Utensils color="#10B981" size={28} />
+        </View>
+        <View style={styles.mainCardContent}>
+          <Text style={styles.mainCardTitle}>Plan Nutricional</Text>
+          <Text style={styles.mainCardSubtitle}>Recomposición corporal</Text>
+          <Text style={styles.mainCardMeta}>5 comidas · suplementos · hidratación</Text>
+        </View>
+        <ChevronDown color="#52525B" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
+      </TouchableOpacity>
+
     </ScrollView>
   );
 
   // =====================================================
   // PANTALLA: WORKOUT (ejercicios del día)
   // =====================================================
-  const renderWorkout = () => (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
-      {/* Back + Header */}
-      <TouchableOpacity style={styles.backButton} onPress={() => setCurrentScreen('home')}>
-        <ChevronLeft color="#A1A1AA" size={22} />
-        <Text style={styles.backText}>Inicio</Text>
-      </TouchableOpacity>
+  const renderWorkoutDaysList = () => {
+    const dayNames = {
+      1: 'DÍA 1 – Pecho + Hombros laterales/posteriores + Bíceps',
+      2: 'DÍA 2 – Piernas (isquios/glúteos) + Pantorrillas',
+      3: 'DÍA 3 – Espalda + Deltoides posteriores + Tríceps',
+      4: 'DÍA 4 – Piernas (cuádriceps + aductores) + Pantorrillas',
+      5: 'DÍA 5 – Hombros + Pectorales + Brazos',
+    };
 
-      <View style={styles.header}>
-        <Text style={styles.dateText}>{today.charAt(0).toUpperCase() + today.slice(1)}</Text>
-        {sessionData ? (
-          <Text style={styles.headerTitle}>Día {sessionData.current_day}: {sessionData.routine_name}</Text>
-        ) : (
-          <Text style={styles.headerTitle}>Cargando...</Text>
-        )}
-      </View>
+    return (
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>
+            {sessionData ? sessionData.routine_name : 'Cargando...'}
+          </Text>
+          <Text style={{ color: '#A1A1AA', fontSize: 14, marginTop: 4 }}>Seleccioná el día para comenzar</Text>
+        </View>
 
-      {/* Ejercicios */}
-      {exercises.map((exercise) => {
-        const isExpanded = expandedId === exercise.id;
-        return (
-          <View key={exercise.id} style={styles.cardContainer}>
+        {[1, 2, 3, 4, 5].map(day => {
+          const dayExercises = exercises.filter(e => e.day_number === day);
+          const exerciseCount = dayExercises.length;
+
+          return (
             <TouchableOpacity
-              style={[styles.cardHeader, isExpanded && styles.cardHeaderExpanded]}
-              activeOpacity={0.8}
-              onPress={() => toggleExpand(exercise.id)}
+              key={`day-${day}`}
+              style={styles.mainCard}
+              activeOpacity={0.85}
+              onPress={() => setSelectedDay(day)}
             >
-              <View style={styles.cardHeaderLeft}>
-                <View style={styles.exerciseImageContainer}>
-                  {exercise.image
-                    ? <Image source={exercise.image} style={styles.exerciseImage} />
-                    : <Dumbbell color="#FAFAFA" size={24} />
-                  }
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.exerciseName}>{exercise.name}</Text>
-                  <Text style={styles.setsInfo}>
-                    {exercise.setsCompleted >= exercise.targetSets
-                      ? `✅ Completado (${exercise.setsCompleted}/${exercise.targetSets} sets)`
-                      : exercise.setsCompleted > 0
-                        ? `${exercise.setsCompleted}/${exercise.targetSets} sets completados`
-                        : `${exercise.targetSets || 3} sets · ${exercise.muscleGroup || ''}`}
-                  </Text>
-                </View>
+              <View style={[styles.mainCardIcon, sessionData?.current_day === day ? { backgroundColor: 'rgba(99, 102, 241, 0.2)' } : {}]}>
+                <Dumbbell color={sessionData?.current_day === day ? "#6366F1" : "#FAFAFA"} size={28} />
               </View>
-              {exercise.setsCompleted >= exercise.targetSets
-                ? <CheckCircle2 color="#10B981" size={22} />
-                : isExpanded
-                  ? <ChevronUp color="#6366F1" size={22} />
-                  : <ChevronDown color="#52525B" size={22} />
-              }
+              <View style={styles.mainCardContent}>
+                <Text style={styles.mainCardTitle}>{dayNames[day]}</Text>
+                <Text style={styles.mainCardSubtitle}>
+                  {exerciseCount > 0 ? `${exerciseCount} Ejercicios asignados` : 'Libre'}
+                </Text>
+                {sessionData?.current_day === day && (
+                  <Text style={{ color: '#6366F1', fontSize: 12, fontWeight: '700', marginTop: 4 }}>Toca hoy 🔥</Text>
+                )}
+              </View>
+              <ChevronDown color="#52525B" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
             </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    );
+  };
 
-            {isExpanded && (
-              <View style={styles.cardBody}>
-                {/* Sugerencia previa */}
-                {nextTarget && (
-                  <View style={styles.suggestionBox}>
-                    <Trophy color="#F59E0B" size={24} />
-                    <View style={{ marginLeft: 12 }}>
-                      <Text style={styles.suggestionLabel}>Próximo Objetivo</Text>
-                      <Text style={styles.suggestionValue}>
-                        {nextTarget.suggested_weight} kg × {nextTarget.suggested_reps} reps
-                      </Text>
-                    </View>
-                  </View>
-                )}
+  const renderWorkoutDayDetail = () => {
+    const dayExercises = exercises.filter(e => e.day_number === selectedDay);
 
-                {successMode ? (
-                  <View style={styles.simpleSuccess}>
-                    <CheckCircle2 color="#10B981" size={64} />
-                    <Text style={styles.simpleSuccessText}>¡Serie Guardada!</Text>
-                    {showXpFlash && lastXpEarned > 0 && (
-                      <Text style={styles.xpFlash}>+{lastXpEarned.toLocaleString()} XP</Text>
-                    )}
-                  </View>
-                ) : (
-                  <View>
-                    <View style={styles.inputRow}>
-                      <View style={styles.inputWrapper}>
-                        <Text style={styles.label}>Peso (kg)</Text>
-                        <TextInput style={styles.input} keyboardType="numeric" placeholder="0"
-                          placeholderTextColor="#52525B" value={weight} onChangeText={setWeight} />
-                      </View>
-                      <View style={styles.inputWrapper}>
-                        <Text style={styles.label}>Reps</Text>
-                        <TextInput style={styles.input} keyboardType="numeric" placeholder="0"
-                          placeholderTextColor="#52525B" value={reps} onChangeText={setReps} />
-                      </View>
-                    </View>
-
-                    <Text style={styles.label}>¿Cómo te sentiste?</Text>
-                    <View style={styles.emojiContainer}>
-                      <TouchableOpacity style={[styles.emojiCard, rpe === 7 && styles.emojiFacilActive]} onPress={() => setRpe(7)}>
-                        <Text style={styles.emojiIcon}>😊</Text>
-                        <Text style={[styles.emojiLabel, rpe === 7 && { color: '#10B981' }]}>Fácil</Text>
-                        <Text style={styles.emojiRpeHint}>RPE 7</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.emojiCard, rpe === 8 && styles.emojiModeradoActive]} onPress={() => setRpe(8)}>
-                        <Text style={styles.emojiIcon}>😐</Text>
-                        <Text style={[styles.emojiLabel, rpe === 8 && { color: '#3B82F6' }]}>Moderado</Text>
-                        <Text style={styles.emojiRpeHint}>RPE 8</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.emojiCard, rpe === 9 && styles.emojiExigenteActive]} onPress={() => setRpe(9)}>
-                        <Text style={styles.emojiIcon}>😤</Text>
-                        <Text style={[styles.emojiLabel, rpe === 9 && { color: '#F59E0B' }]}>Exigente</Text>
-                        <Text style={styles.emojiRpeHint}>RPE 9</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.emojiCard, rpe === 10 && styles.emojiFalloActive]} onPress={() => setRpe(10)}>
-                        <Text style={styles.emojiIcon}>😵</Text>
-                        <Text style={[styles.emojiLabel, rpe === 10 && { color: '#FAFAFA' }]}>Al Fallo</Text>
-                        <Text style={styles.emojiRpeHint}>RPE 10</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <TouchableOpacity style={styles.saveButton} onPress={() => handleSave(exercise.id)} disabled={loading}>
-                      {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveButtonText}>Guardar Serie</Text>}
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-        );
-      })}
-
-      {exercises.length > 0 && (
-        <TouchableOpacity
-          style={[styles.saveButton, styles.finishButton]}
-          onPress={async () => {
-            if (!sessionData) return;
-            setIsFinishing(true);
-            try {
-              await axios.post(`${BACKEND_URL}/routines/${sessionData.routine_id}/complete-day`);
-              Alert.alert(
-                "¡Sesión Completada! 🎉",
-                "Gran trabajo. Tu próximo entrenamiento ya está programado.",
-                [{ text: "Genial", onPress: () => { fetchExercises(); fetchMyPoints(); setCurrentScreen('home'); } }]
-              );
-            } catch (error) {
-              console.error(error);
-              Alert.alert("Error", "No se pudo finalizar la sesión.");
-            } finally {
-              setIsFinishing(false);
-            }
-          }}
-          disabled={isFinishing}
-        >
-          {isFinishing
-            ? <ActivityIndicator color="#FFFFFF" />
-            : <Text style={styles.saveButtonText}>Finalizar Sesión</Text>
-          }
+    return (
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Back + Header */}
+        <TouchableOpacity style={styles.backButton} onPress={() => setSelectedDay(null)}>
+          <ChevronLeft color="#A1A1AA" size={22} />
+          <Text style={styles.backText}>Volver a días</Text>
         </TouchableOpacity>
-      )}
-    </ScrollView>
-  );
+
+        <View style={styles.header}>
+          <Text style={styles.dateText}>Día {selectedDay}</Text>
+          <Text style={styles.headerTitle}>
+            {{
+              1: 'Pecho + Hombros lat/post + Bíceps',
+              2: 'Piernas (isquios) + Pantorrillas',
+              3: 'Espalda + Deltoides post + Tríceps',
+              4: 'Piernas (cuádriceps) + Pantorrillas',
+              5: 'Hombros + Pectorales + Brazos'
+            }[selectedDay] || sessionData?.routine_name}
+          </Text>
+        </View>
+
+        {/* Ejercicios */}
+        {dayExercises.map((exercise) => {
+          const isExpanded = expandedId === exercise.id;
+          return (
+            <View key={exercise.id} style={styles.cardContainer}>
+              <TouchableOpacity
+                style={[styles.cardHeader, isExpanded && styles.cardHeaderExpanded]}
+                activeOpacity={0.8}
+                onPress={() => toggleExpand(exercise.id)}
+              >
+                <View style={styles.cardHeaderLeft}>
+                  <View style={styles.exerciseImageContainer}>
+                    {exercise.image
+                      ? <Image source={exercise.image} style={styles.exerciseImage} />
+                      : <Dumbbell color="#FAFAFA" size={24} />
+                    }
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.exerciseName}>{exercise.name}</Text>
+                    <Text style={styles.setsInfo}>
+                      {exercise.setsCompleted >= exercise.targetSets
+                        ? `✅ Completado (${exercise.setsCompleted}/${exercise.targetSets} sets)`
+                        : exercise.setsCompleted > 0
+                          ? `${exercise.setsCompleted}/${exercise.targetSets} sets completados`
+                          : `${exercise.targetSets || 3} sets · ${exercise.muscleGroup || ''}`}
+                    </Text>
+                  </View>
+                </View>
+                {exercise.setsCompleted >= exercise.targetSets
+                  ? <CheckCircle2 color="#10B981" size={22} />
+                  : isExpanded
+                    ? <ChevronUp color="#6366F1" size={22} />
+                    : <ChevronDown color="#52525B" size={22} />
+                }
+              </TouchableOpacity>
+
+              {isExpanded && (
+                <View style={styles.cardBody}>
+                  {/* Botón de Tutorial */}
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', backgroundColor: '#27272A',
+                      padding: 12, borderRadius: 12, marginBottom: 16, justifyContent: 'center',
+                      borderWidth: 1, borderColor: '#3F3F46'
+                    }}
+                    onPress={() => Linking.openURL(`https://www.youtube.com/results?search_query=como+hacer+${encodeURIComponent(exercise.name)}+ejercicio`)}
+                  >
+                    <Play color="#10B981" size={18} style={{ marginRight: 8 }} />
+                    <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700', textTransform: 'uppercase' }}>Ver tutorial del ejercicio</Text>
+                  </TouchableOpacity>
+
+                  {/* Sugerencia previa */}
+                  {nextTarget && (
+                    <View style={styles.suggestionBox}>
+                      <Trophy color="#F59E0B" size={24} />
+                      <View style={{ marginLeft: 12 }}>
+                        <Text style={styles.suggestionLabel}>Próximo Objetivo</Text>
+                        <Text style={styles.suggestionValue}>
+                          {nextTarget.suggested_weight} kg × {nextTarget.suggested_reps} reps
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {successMode ? (
+                    <View style={styles.simpleSuccess}>
+                      <CheckCircle2 color="#10B981" size={64} />
+                      <Text style={styles.simpleSuccessText}>¡Serie Guardada!</Text>
+                      {showXpFlash && lastXpEarned > 0 && (
+                        <Text style={styles.xpFlash}>+{lastXpEarned.toLocaleString()} XP</Text>
+                      )}
+                    </View>
+                  ) : (
+                    <View>
+                      <View style={styles.inputRow}>
+                        <View style={styles.inputWrapper}>
+                          <Text style={styles.label}>Peso (kg)</Text>
+                          <TextInput style={styles.input} keyboardType="numeric" placeholder="0"
+                            placeholderTextColor="#52525B" value={weight} onChangeText={setWeight} />
+                        </View>
+                        <View style={styles.inputWrapper}>
+                          <Text style={styles.label}>Reps</Text>
+                          <TextInput style={styles.input} keyboardType="numeric" placeholder="0"
+                            placeholderTextColor="#52525B" value={reps} onChangeText={setReps} />
+                        </View>
+                      </View>
+
+                      <Text style={styles.label}>¿Cómo te sentiste?</Text>
+                      <View style={styles.emojiContainer}>
+                        <TouchableOpacity style={[styles.emojiCard, rpe === 7 && styles.emojiFacilActive]} onPress={() => setRpe(7)}>
+                          <Text style={styles.emojiIcon}>😊</Text>
+                          <Text style={[styles.emojiLabel, rpe === 7 && { color: '#10B981' }]}>Fácil</Text>
+                          <Text style={styles.emojiRpeHint}>RPE 7</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.emojiCard, rpe === 8 && styles.emojiModeradoActive]} onPress={() => setRpe(8)}>
+                          <Text style={styles.emojiIcon}>😐</Text>
+                          <Text style={[styles.emojiLabel, rpe === 8 && { color: '#3B82F6' }]}>Moderado</Text>
+                          <Text style={styles.emojiRpeHint}>RPE 8</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.emojiCard, rpe === 9 && styles.emojiExigenteActive]} onPress={() => setRpe(9)}>
+                          <Text style={styles.emojiIcon}>😤</Text>
+                          <Text style={[styles.emojiLabel, rpe === 9 && { color: '#F59E0B' }]}>Exigente</Text>
+                          <Text style={styles.emojiRpeHint}>RPE 9</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.emojiCard, rpe === 10 && styles.emojiFalloActive]} onPress={() => setRpe(10)}>
+                          <Text style={styles.emojiIcon}>😵</Text>
+                          <Text style={[styles.emojiLabel, rpe === 10 && { color: '#FAFAFA' }]}>Al Fallo</Text>
+                          <Text style={styles.emojiRpeHint}>RPE 10</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <TouchableOpacity style={styles.saveButton} onPress={() => handleSave(exercise.id)} disabled={loading}>
+                        {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveButtonText}>Guardar Serie</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })}
+
+        {dayExercises.length > 0 && (
+          <TouchableOpacity
+            style={[styles.saveButton, styles.finishButton]}
+            onPress={async () => {
+              if (!sessionData) return;
+              setIsFinishing(true);
+              try {
+                // Optionally mark day as complete in backend if hitting day logic
+                await axios.post(`${BACKEND_URL}/routines/${sessionData.routine_id}/complete-day`);
+                Alert.alert(
+                  "¡Día Completado! 🎉",
+                  "Gran trabajo. Tu progreso se ha guardado.",
+                  [{ text: "Genial", onPress: () => { fetchExercises(); fetchMyPoints(); setSelectedDay(null); } }]
+                );
+              } catch (error) {
+                console.error(error);
+                Alert.alert("Error", "No se pudo finalizar la sesión.");
+              } finally {
+                setIsFinishing(false);
+              }
+            }}
+            disabled={isFinishing}
+          >
+            {isFinishing
+              ? <ActivityIndicator color="#FFFFFF" />
+              : <Text style={styles.saveButtonText}>Terminar Día {selectedDay}</Text>
+            }
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+    );
+  };
+
+  const renderWorkout = () => {
+    if (!selectedDay) {
+      return renderWorkoutDaysList();
+    }
+    return renderWorkoutDayDetail();
+  };
 
   // =====================================================
   // PANTALLA: PROGRESO / RANKING
@@ -572,6 +735,159 @@ export default function App() {
   );
 
   // =====================================================
+  // PANTALLA: NUTRICIÓN
+  // =====================================================
+  const renderNutrition = () => {
+    if (loadingNutrition || !nutritionPlan) {
+      return (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+          <ActivityIndicator color="#10B981" size="large" />
+          <Text style={{ color: '#52525B', marginTop: 12 }}>Cargando plan nutricional...</Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <TouchableOpacity style={styles.backButton} onPress={() => setCurrentScreen('home')}>
+          <ChevronLeft color="#A1A1AA" size={22} />
+          <Text style={styles.backText}>Inicio</Text>
+        </TouchableOpacity>
+
+        {/* Header */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={styles.dateText}>TEAM PATO COACHING</Text>
+          <Text style={styles.headerTitle}>Plan Nutricional</Text>
+          <Text style={{ color: '#71717A', fontSize: 14, marginTop: 4 }}>🔥 Objetivo: Recomposición corporal</Text>
+        </View>
+
+        {/* Macros Card */}
+        <View style={[styles.bannerCard, { borderColor: 'rgba(16, 185, 129, 0.2)' }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>Objetivos Diarios</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              <View style={styles.macroChip}>
+                <Text style={styles.macroValue}>{nutritionPlan.objectives.calories}</Text>
+                <Text style={styles.macroLabel}>Calorías</Text>
+              </View>
+              <View style={styles.macroChip}>
+                <Text style={[styles.macroValue, { color: '#EF4444' }]}>{nutritionPlan.objectives.protein}</Text>
+                <Text style={styles.macroLabel}>Proteínas</Text>
+              </View>
+              <View style={styles.macroChip}>
+                <Text style={[styles.macroValue, { color: '#F59E0B' }]}>{nutritionPlan.objectives.carbs}</Text>
+                <Text style={styles.macroLabel}>Carbos</Text>
+              </View>
+              <View style={styles.macroChip}>
+                <Text style={[styles.macroValue, { color: '#6366F1' }]}>{nutritionPlan.objectives.fats}</Text>
+                <Text style={styles.macroLabel}>Grasas</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Meals */}
+        <Text style={styles.sectionTitle}>🍽 Comidas del Día</Text>
+        {nutritionPlan.meals.map((meal) => {
+          const isOpen = expandedMeal === meal.id;
+          return (
+            <View key={meal.id} style={styles.cardContainer}>
+              <TouchableOpacity
+                style={[styles.cardHeader, isOpen && styles.cardHeaderExpanded]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setExpandedMeal(isOpen ? null : meal.id);
+                }}
+              >
+                <View style={styles.cardHeaderLeft}>
+                  <View style={[styles.exerciseImageContainer, { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]}>
+                    <Text style={{ fontSize: 28 }}>{meal.emoji}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.exerciseName}>{meal.name}</Text>
+                    <Text style={styles.setsInfo}>{meal.time} · {meal.options.length} opción{meal.options.length > 1 ? 'es' : ''}</Text>
+                    {meal.note && <Text style={{ color: '#F59E0B', fontSize: 11, marginTop: 2 }}>{meal.note}</Text>}
+                  </View>
+                </View>
+                {isOpen ? <ChevronUp color="#10B981" size={22} /> : <ChevronDown color="#52525B" size={22} />}
+              </TouchableOpacity>
+
+              {isOpen && (
+                <View style={styles.cardBody}>
+                  {meal.options.map((option, oidx) => (
+                    <View key={oidx} style={{ marginBottom: oidx < meal.options.length - 1 ? 16 : 0 }}>
+                      <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>{option.title}</Text>
+                      {option.items.map((item, iidx) => (
+                        <View key={iidx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6, gap: 8 }}>
+                          <Text style={{ color: '#3F3F46', fontSize: 14 }}>•</Text>
+                          <Text style={{ color: '#D4D4D8', fontSize: 14, flex: 1, lineHeight: 20 }}>{item}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          );
+        })}
+
+        {/* Water */}
+        <View style={[styles.bannerCard, { borderColor: 'rgba(59, 130, 246, 0.2)', marginTop: 8 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#3B82F6', fontSize: 15, fontWeight: '800', marginBottom: 4 }}>💧 Hidratación</Text>
+            <Text style={{ color: '#D4D4D8', fontSize: 14, lineHeight: 20 }}>{nutritionPlan.water}</Text>
+          </View>
+        </View>
+
+        {/* Supplements */}
+        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>💊 Suplementos</Text>
+        {nutritionPlan.supplements.map((supp, idx) => (
+          <View key={idx} style={{
+            flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+            backgroundColor: '#18181B', borderRadius: 14, padding: 16, marginBottom: 8,
+            borderWidth: 1, borderColor: '#27272A',
+          }}>
+            <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '600' }}>{supp.name}</Text>
+            <Text style={{ color: '#71717A', fontSize: 13 }}>{supp.when}</Text>
+          </View>
+        ))}
+
+        {/* Weekend rule */}
+        <View style={[styles.bannerCard, { borderColor: 'rgba(245, 158, 11, 0.2)', marginTop: 16 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#F59E0B', fontSize: 15, fontWeight: '800', marginBottom: 4 }}>🍕 Fin de Semana</Text>
+            <Text style={{ color: '#D4D4D8', fontSize: 14, lineHeight: 20 }}>{nutritionPlan.weekend_rule}</Text>
+          </View>
+        </View>
+
+        {/* Reminders */}
+        <View style={[styles.bannerCard, { borderColor: 'rgba(99, 102, 241, 0.2)', marginTop: 8, marginBottom: 20 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#6366F1', fontSize: 15, fontWeight: '800', marginBottom: 8 }}>✔ Recordá</Text>
+            {nutritionPlan.reminders.map((rem, idx) => (
+              <Text key={idx} style={{ color: '#D4D4D8', fontSize: 14, marginBottom: 4, lineHeight: 20 }}>↳ {rem}</Text>
+            ))}
+          </View>
+        </View>
+
+        {/* Protein Portions */}
+        <Text style={styles.sectionTitle}>📏 Medidas Caseras para Proteína</Text>
+        {nutritionPlan.protein_portions.map((pp, idx) => (
+          <View key={idx} style={{
+            backgroundColor: '#18181B', borderRadius: 14, padding: 16, marginBottom: 8,
+            borderWidth: 1, borderColor: '#27272A',
+          }}>
+            <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '700' }}>{pp.food}</Text>
+            <Text style={{ color: '#A1A1AA', fontSize: 13, marginTop: 2 }}>{pp.measure} → {pp.equivalent}</Text>
+          </View>
+        ))}
+
+      </ScrollView>
+    );
+  };
+
+  // =====================================================
   // RENDER PRINCIPAL
   // =====================================================
   return (
@@ -581,6 +897,7 @@ export default function App() {
         {currentScreen === 'home' && renderHome()}
         {currentScreen === 'workout' && renderWorkout()}
         {currentScreen === 'progress' && renderProgress()}
+        {currentScreen === 'nutrition' && renderNutrition()}
         {currentScreen === 'profile' && renderProfile()}
 
       </KeyboardAvoidingView>
@@ -597,7 +914,7 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setCurrentScreen('workout')}
+          onPress={() => { setSelectedDay(null); setCurrentScreen('workout'); }}
         >
           <Dumbbell color={currentScreen === 'workout' ? '#6366F1' : '#52525B'} size={22} />
           <Text style={[styles.tabLabel, currentScreen === 'workout' && styles.tabLabelActive]}>Entreno</Text>
@@ -609,6 +926,14 @@ export default function App() {
         >
           <Trophy color={currentScreen === 'progress' ? '#F59E0B' : '#52525B'} size={22} />
           <Text style={[styles.tabLabel, currentScreen === 'progress' && { color: '#F59E0B' }]}>Ranking</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => setCurrentScreen('nutrition')}
+        >
+          <Utensils color={currentScreen === 'nutrition' ? '#10B981' : '#52525B'} size={22} />
+          <Text style={[styles.tabLabel, currentScreen === 'nutrition' && { color: '#10B981' }]}>Nutrición</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -846,5 +1171,17 @@ const styles = StyleSheet.create({
   },
   rankingXpLabel: {
     color: '#52525B', fontSize: 10, fontWeight: '700', textTransform: 'uppercase',
+  },
+
+  // NUTRITION
+  macroChip: {
+    backgroundColor: '#27272A', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    alignItems: 'center', minWidth: 80,
+  },
+  macroValue: {
+    color: '#10B981', fontSize: 15, fontWeight: '800',
+  },
+  macroLabel: {
+    color: '#71717A', fontSize: 10, fontWeight: '600', textTransform: 'uppercase', marginTop: 2,
   },
 });
