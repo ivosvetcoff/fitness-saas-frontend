@@ -18,7 +18,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 // API BASE URL - Cambiado a la IP de la computadora para probar desde el celular
-const BACKEND_URL = 'http://192.168.20.229:8000';
+const BACKEND_URL = 'http://192.168.100.8:8000';
 
 // Mapa de imágenes de ejercicios (nombre exacto de la DB → asset local)
 const EXERCISE_IMAGES = {
@@ -871,17 +871,47 @@ export default function App() {
           </View>
         </View>
 
-        {/* Protein Portions */}
-        <Text style={styles.sectionTitle}>📏 Medidas Caseras para Proteína</Text>
-        {nutritionPlan.protein_portions.map((pp, idx) => (
-          <View key={idx} style={{
-            backgroundColor: '#18181B', borderRadius: 14, padding: 16, marginBottom: 8,
-            borderWidth: 1, borderColor: '#27272A',
-          }}>
-            <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '700' }}>{pp.food}</Text>
-            <Text style={{ color: '#A1A1AA', fontSize: 13, marginTop: 2 }}>{pp.measure} → {pp.equivalent}</Text>
-          </View>
-        ))}
+        {/* Portion Guide – Hand Method */}
+        <Text style={styles.sectionTitle}>🤲 Guía de Porciones</Text>
+        <View style={{
+          backgroundColor: '#18181B', borderRadius: 14, padding: 16, marginBottom: 12,
+          borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.25)',
+        }}>
+          <Text style={{ color: '#A1A1AA', fontSize: 13, lineHeight: 20 }}>
+            Usá tu propia mano como referencia para medir porciones. Es personal, porque el tamaño de tu mano se ajusta a tu cuerpo.
+          </Text>
+        </View>
+        {nutritionPlan.protein_portions.map((pp, idx) => {
+          const catColors = {
+            protein: { bg: 'rgba(16, 185, 129, 0.08)', border: 'rgba(16, 185, 129, 0.3)', accent: '#10B981', label: 'PROTEÍNA' },
+            carbs: { bg: 'rgba(245, 158, 11, 0.08)', border: 'rgba(245, 158, 11, 0.3)', accent: '#F59E0B', label: 'CARBOHIDRATO' },
+            fats: { bg: 'rgba(59, 130, 246, 0.08)', border: 'rgba(59, 130, 246, 0.3)', accent: '#3B82F6', label: 'GRASA' },
+          };
+          const c = catColors[pp.category] || catColors.protein;
+          return (
+            <View key={idx} style={{
+              backgroundColor: c.bg, borderRadius: 16, padding: 16, marginBottom: 10,
+              borderWidth: 1, borderColor: c.border, flexDirection: 'row', alignItems: 'center', gap: 14,
+            }}>
+              <View style={{
+                width: 52, height: 52, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.3)',
+                justifyContent: 'center', alignItems: 'center',
+              }}>
+                <Text style={{ fontSize: 28 }}>{pp.icon || '🫲'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '700' }}>{pp.food}</Text>
+                  <View style={{ backgroundColor: c.accent + '22', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ color: c.accent, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 }}>{c.label}</Text>
+                  </View>
+                </View>
+                <Text style={{ color: '#D4D4D8', fontSize: 13, marginTop: 1 }}>{pp.measure}</Text>
+                <Text style={{ color: '#71717A', fontSize: 12, marginTop: 2 }}>{pp.equivalent}</Text>
+              </View>
+            </View>
+          );
+        })}
 
       </ScrollView>
     );
