@@ -79,6 +79,81 @@ const EXERCISE_IMAGES = {
   'Peso Muerto Rumano': require('./assets/exercises/peso_muerto_rumano.png'),
 };
 
+// Mapeo temporal para esquemas de repeticiones específicos
+const CUSTOM_REP_SCHEMES = {
+  'Vuelos Laterales Sentado': '20-15-12-10',
+  'Press Banco Plano con Barra': '12-10-8-8',
+  'Pec Deck (Mariposa)': '15-12-10-10',
+  'Curl en Banco Scott': '15-12-10-8',
+  'Sentadilla Sumo en Máquina': '20-15-12-10',
+  'Prensa de Piernas': '20-15-12-10',
+  'Empuje de Tríceps': '15-12-10-8',
+};
+
+// Componente Timer Aislado para evitar re-renders de toda la App
+const WorkoutTimer = () => {
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [customTimerInput, setCustomTimerInput] = useState('');
+
+  useEffect(() => {
+    let interval = null;
+    if (isTimerActive && timerSeconds > 0) {
+      interval = setInterval(() => {
+        setTimerSeconds(sec => sec - 1);
+      }, 1000);
+    } else if (timerSeconds === 0) {
+      setIsTimerActive(false);
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isTimerActive, timerSeconds]);
+
+  const startTimer = (secs) => {
+    setTimerSeconds(secs);
+    setIsTimerActive(true);
+  };
+
+  return (
+    <View style={{ marginTop: 24, borderTopWidth: 1, borderColor: '#27272A', paddingTop: 20 }}>
+      <Text style={[styles.label, { textAlign: 'center' }]}>Temporizador de Descanso</Text>
+      {isTimerActive ? (
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ fontSize: 48, fontWeight: '900', color: timerSeconds <= 5 && timerSeconds > 0 ? '#EF4444' : '#10B981', fontVariant: ['tabular-nums'] }}>
+            {Math.floor(timerSeconds / 60).toString().padStart(2, '0')}:{(timerSeconds % 60).toString().padStart(2, '0')}
+          </Text>
+          <TouchableOpacity style={{ marginTop: 12, paddingVertical: 8, paddingHorizontal: 16 }} onPress={() => setIsTimerActive(false)}>
+            <Text style={{ color: '#EF4444', fontSize: 13, fontWeight: '700', textTransform: 'uppercase' }}>Detener</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View>
+          <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', marginBottom: 12 }}>
+            {[30, 60, 90, 120].map(s => (
+              <TouchableOpacity key={s} onPress={() => startTimer(s)} style={{ backgroundColor: '#27272A', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12 }}>
+                <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '700' }}>{s}s</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+            <TextInput
+              style={{ backgroundColor: '#09090B', color: '#FAFAFA', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: '#3F3F46', textAlign: 'center', width: 90 }}
+              placeholder="Segs" placeholderTextColor="#52525B" keyboardType="numeric"
+              value={customTimerInput} onChangeText={setCustomTimerInput}
+            />
+            <TouchableOpacity
+              style={{ backgroundColor: '#6366F1', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12 }}
+              onPress={() => { if (parseInt(customTimerInput) > 0) startTimer(parseInt(customTimerInput)); }}
+            >
+              <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '700' }}>Iniciar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+};
+
 export default function App() {
   // =====================================================
   // ESTADO GLOBAL
@@ -113,6 +188,45 @@ export default function App() {
   // Day selection
   const [selectedDay, setSelectedDay] = useState(null);
 
+  // Profile & Social
+  const [profilePic, setProfilePic] = useState(null);
+
+  // Timer
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [customTimerInput, setCustomTimerInput] = useState('');
+
+  useEffect(() => {
+    let interval = null;
+    if (isTimerActive && timerSeconds > 0) {
+      interval = setInterval(() => {
+        setTimerSeconds(sec => sec - 1);
+      }, 1000);
+    } else if (timerSeconds === 0) {
+      setIsTimerActive(false);
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isTimerActive, timerSeconds]);
+
+  const startTimer = (secs) => {
+    setTimerSeconds(secs);
+    setIsTimerActive(true);
+  };
+
+  const handleImagePick = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setProfilePic(result.assets[0].uri);
+    }
+  };
+
   const today = new Date().toLocaleDateString('es-ES', {
     weekday: 'long', day: 'numeric', month: 'long'
   });
@@ -140,16 +254,20 @@ export default function App() {
 
         // Fetch ALL exercises for this routine instead of just the next workout
         const allResp = await axios.get(`${BACKEND_URL}/routines/${response.data.routine_id}/exercises`);
-        const allLoadedExercises = allResp.data.map((ex) => ({
-          id: ex.exercise_id,
-          routine_id: ex.routine_id,
-          name: ex.exercises?.name || `Ejercicio ${ex.exercise_id.substring(0, 4)}`,
-          muscleGroup: ex.exercises?.muscle_group || '',
-          targetSets: ex.sets || 3,
-          setsCompleted: 0,
-          day_number: ex.day_number,
-          image: EXERCISE_IMAGES[ex.exercises?.name] || null,
-        }));
+        const allLoadedExercises = allResp.data.map((ex) => {
+          const name = ex.exercises?.name || `Ejercicio ${ex.exercise_id.substring(0, 4)}`;
+          return {
+            id: ex.exercise_id,
+            routine_id: ex.routine_id,
+            name: name,
+            muscleGroup: ex.exercises?.muscle_group || '',
+            targetSets: ex.sets || 3,
+            setsCompleted: 0,
+            day_number: ex.day_number,
+            image: EXERCISE_IMAGES[name] || null,
+            repScheme: CUSTOM_REP_SCHEMES[name] || null,
+          };
+        });
         // Sort by day and id to stay consistent
         setExercises(allLoadedExercises.sort((a, b) => a.day_number - b.day_number));
       }
@@ -263,7 +381,7 @@ export default function App() {
   // PANTALLA: HOME
   // =====================================================
   const renderHome = () => (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
+    <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
       {/* Header con saludo */}
       <View style={styles.homeHeader}>
         <View style={{ flex: 1 }}>
@@ -380,7 +498,7 @@ export default function App() {
     };
 
     return (
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>
             {sessionData ? sessionData.routine_name : 'Cargando...'}
@@ -423,7 +541,7 @@ export default function App() {
     const dayExercises = exercises.filter(e => e.day_number === selectedDay);
 
     return (
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         {/* Back + Header */}
         <TouchableOpacity style={styles.backButton} onPress={() => setSelectedDay(null)}>
           <ChevronLeft color="#A1A1AA" size={22} />
@@ -467,7 +585,7 @@ export default function App() {
                         ? `✅ Completado (${exercise.setsCompleted}/${exercise.targetSets} sets)`
                         : exercise.setsCompleted > 0
                           ? `${exercise.setsCompleted}/${exercise.targetSets} sets completados`
-                          : `${exercise.targetSets || 3} sets · ${exercise.muscleGroup || ''}`}
+                          : `${exercise.targetSets || 3} sets ${exercise.repScheme ? `(${exercise.repScheme})` : ''} · ${exercise.muscleGroup || ''}`}
                     </Text>
                   </View>
                 </View>
@@ -524,8 +642,11 @@ export default function App() {
                             placeholderTextColor="#52525B" value={weight} onChangeText={setWeight} />
                         </View>
                         <View style={styles.inputWrapper}>
-                          <Text style={styles.label}>Reps</Text>
-                          <TextInput style={styles.input} keyboardType="numeric" placeholder="0"
+                          <Text style={styles.label}>
+                            Reps {exercise.repScheme ? `(Obj: ${exercise.repScheme.split('-')[Math.min(exercise.setsCompleted, (exercise.repScheme.split('-').length || 1) - 1)]})` : ''}
+                          </Text>
+                          <TextInput style={styles.input} keyboardType="numeric"
+                            placeholder={exercise.repScheme ? exercise.repScheme.split('-')[Math.min(exercise.setsCompleted, (exercise.repScheme.split('-').length || 1) - 1)] : "0"}
                             placeholderTextColor="#52525B" value={reps} onChangeText={setReps} />
                         </View>
                       </View>
@@ -557,6 +678,9 @@ export default function App() {
                       <TouchableOpacity style={styles.saveButton} onPress={() => handleSave(exercise.id)} disabled={loading}>
                         {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveButtonText}>Guardar Serie</Text>}
                       </TouchableOpacity>
+
+                      {/* Temporizador Aislado */}
+                      <WorkoutTimer />
                     </View>
                   )}
                 </View>
@@ -614,7 +738,7 @@ export default function App() {
     const positionEmojis = ['', '🥇', '🥈', '🥉'];
 
     return (
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         <TouchableOpacity style={styles.backButton} onPress={() => setCurrentScreen('home')}>
           <ChevronLeft color="#A1A1AA" size={22} />
           <Text style={styles.backText}>Inicio</Text>
@@ -696,43 +820,97 @@ export default function App() {
   // =====================================================
   // PANTALLA: PERFIL
   // =====================================================
-  const renderProfile = () => (
-    <ScrollView contentContainerStyle={styles.scrollContent}>
-      {/* Avatar + Info */}
-      <View style={{ alignItems: 'center', marginBottom: 32 }}>
-        <View style={{
-          width: 90, height: 90, borderRadius: 45, backgroundColor: '#27272A',
-          alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-          borderWidth: 2, borderColor: '#6366F1',
-        }}>
-          <User color="#A1A1AA" size={40} />
-        </View>
-        <Text style={{ color: '#FAFAFA', fontSize: 22, fontWeight: '800' }}>Atleta</Text>
-        <Text style={{ color: '#71717A', fontSize: 14, marginTop: 4 }}>
-          {sessionData ? sessionData.routine_name : 'Sin rutina activa'}
-        </Text>
-      </View>
+  const renderProfile = () => {
+    // Generar un "feed" falso con las fotos de progreso
+    const dummyFeed = Array(9).fill(null);
+    return (
+      <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
+        {/* Top Section - Avatar and Stats */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+          <TouchableOpacity onPress={handleImagePick} style={{ position: 'relative' }}>
+            <View style={{
+              width: 90, height: 90, borderRadius: 45, backgroundColor: '#27272A',
+              alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#6366F1', overflow: 'hidden'
+            }}>
+              {profilePic ? (
+                <Image source={{ uri: profilePic }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+              ) : (
+                <User color="#A1A1AA" size={40} />
+              )}
+            </View>
+            <View style={{
+              position: 'absolute', bottom: 0, right: 0, backgroundColor: '#6366F1',
+              width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+              borderWidth: 2, borderColor: '#09090B'
+            }}>
+              <Camera color="#FAFAFA" size={14} />
+            </View>
+          </TouchableOpacity>
 
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Flame color="#F59E0B" size={20} />
-          <Text style={styles.statNumber}>{totalXp.toLocaleString()}</Text>
-          <Text style={styles.statLabel}>XP Total</Text>
+          <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-evenly', marginLeft: 10 }}>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 18, fontWeight: '800' }}>{sessionData ? sessionData.total_days : 0}</Text>
+              <Text style={{ color: '#71717A', fontSize: 12, fontWeight: '500' }}>Días</Text>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 18, fontWeight: '800' }}>
+                {rankings.find(r => r.student_id === STUDENT_ID)?.position || '-'}
+              </Text>
+              <Text style={{ color: '#71717A', fontSize: 12, fontWeight: '500' }}>Puesto</Text>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 18, fontWeight: '800' }}>
+                {totalXp > 1000 ? (totalXp / 1000).toFixed(1) + 'k' : totalXp}
+              </Text>
+              <Text style={{ color: '#71717A', fontSize: 12, fontWeight: '500' }}>XP</Text>
+            </View>
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Dumbbell color="#6366F1" size={20} />
-          <Text style={styles.statNumber}>{exercises.length}</Text>
-          <Text style={styles.statLabel}>Ejercicios</Text>
+
+        {/* Bio Section */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '700' }}>Atleta</Text>
+          <Text style={{ color: '#D4D4D8', fontSize: 14, marginTop: 2 }}>{sessionData?.routine_name || 'Sin rutina asignada'}</Text>
+          <Text style={{ color: '#A1A1AA', fontSize: 14, marginTop: 4 }}>"No hay excusas, solo resultados 🔥"</Text>
         </View>
-        <View style={styles.statCard}>
-          <Calendar color="#10B981" size={20} />
-          <Text style={styles.statNumber}>{sessionData ? sessionData.total_days : 0}</Text>
-          <Text style={styles.statLabel}>Días</Text>
+
+        {/* Action Buttons */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+          <TouchableOpacity style={{ flex: 1, backgroundColor: '#27272A', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
+            <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '600' }}>Editar Perfil</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flex: 1, backgroundColor: '#6366F1', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}
+            onPress={handleImagePick}
+          >
+            <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '600' }}>Subir Progreso</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-    </ScrollView>
-  );
+
+        {/* Feed Icons */}
+        <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#27272A', marginBottom: 2 }}>
+          <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#FAFAFA' }}>
+            <Activity color="#FAFAFA" size={24} />
+          </View>
+          <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
+            <Camera color="#52525B" size={24} />
+          </View>
+        </View>
+
+        {/* Grid Feed */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
+          {dummyFeed.map((_, i) => (
+            <View key={i} style={{ width: '33%', aspectRatio: 1, backgroundColor: '#18181B', marginBottom: 2 }}>
+              <View style={{ flex: 1, borderWidth: 1, borderColor: '#09090B', alignItems: 'center', justifyContent: 'center' }}>
+                <Dumbbell color="#27272A" size={24} />
+              </View>
+            </View>
+          ))}
+        </View>
+
+      </ScrollView>
+    );
+  };
 
   // =====================================================
   // PANTALLA: NUTRICIÓN
@@ -748,7 +926,7 @@ export default function App() {
     }
 
     return (
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         <TouchableOpacity style={styles.backButton} onPress={() => setCurrentScreen('home')}>
           <ChevronLeft color="#A1A1AA" size={22} />
           <Text style={styles.backText}>Inicio</Text>
