@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView,
-  Platform, ScrollView, LayoutAnimation, UIManager, Image, Linking
+  Platform, ScrollView, LayoutAnimation, UIManager, Image, Linking, Modal
 } from 'react-native';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
@@ -10,7 +10,7 @@ import {
   Play, CheckCircle2, Trophy, Dumbbell, Activity,
   ChevronDown, ChevronUp, Camera, Home, User,
   TrendingUp, ChevronLeft, Utensils, Flame, Calendar,
-  Zap, Target
+  Zap, Target, Users, MessageSquare, Send, MessageCircle, Plus, X
 } from 'lucide-react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -158,12 +158,32 @@ export default function App() {
   // =====================================================
   // ESTADO GLOBAL
   // =====================================================
-  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'workout' | 'progress' | 'nutrition' | 'profile'
+  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'workout' | 'progress' | 'nutrition' | 'profile' | 'community' | 'socialProfile' | 'inbox' | 'chatWindow'
   const [sessionData, setSessionData] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const STUDENT_ID = "123e4567-e89b-12d3-a456-426614174000";
+
+  // Fake User object for generic actions (matching FitPro setup)
+  const loggedInUser = { id: STUDENT_ID, name: 'Atleta', username: 'atleta_test' };
+
+  // Social & Community States
+  const [feed, setFeed] = useState([]);
+  const [loadingFeed, setLoadingFeed] = useState(false);
+  const [socialProfile, setSocialProfile] = useState(null);
+  const [showNewPostModal, setShowNewPostModal] = useState(false);
+  const [newPostCaption, setNewPostCaption] = useState('');
+  const [newPostImage, setNewPostImage] = useState(null);
+  const [showCommentsFor, setShowCommentsFor] = useState(null);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+
+  // Inbox & DMs States
+  const [inbox, setInbox] = useState([]);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [activeChatUser, setActiveChatUser] = useState(null);
+  const [newDmText, setNewDmText] = useState('');
 
   // Form states
   const [weight, setWeight] = useState('');
@@ -312,6 +332,82 @@ export default function App() {
     } finally {
       setLoadingNutrition(false);
     }
+  };
+
+  // =====================================================
+  // SOCIAL FETCHERS
+  // =====================================================
+  const fetchFeed = async () => {
+    setLoadingFeed(true);
+    try {
+      const { data } = await axios.get(`${BACKEND_URL}/feed/${loggedInUser.id}`);
+      setFeed(data || []);
+    } catch (e) { console.error('Error feed:', e); } finally { setLoadingFeed(false); }
+  };
+
+  const fetchProfile = async (targetId) => {
+    try {
+      const { data } = await axios.get(`${BACKEND_URL}/users/${targetId}/profile`);
+      const { data: postsData } = await axios.get(`${BACKEND_URL}/users/${targetId}/posts?request_user_id=${loggedInUser.id}`);
+      setSocialProfile({ ...data, posts: postsData || [] });
+    } catch (e) { console.error('Error profile:', e); }
+  };
+
+  const toggleLike = async (postId) => {
+    try {
+      const { data } = await axios.post(`${BACKEND_URL}/posts/${postId}/toggle-like`, { user_id: loggedInUser.id });
+      const liked = data.status === 'liked';
+      const inc = liked ? 1 : -1;
+      setFeed(prev => prev.map(p => p.id === postId ? { ...p, has_liked: liked, likes_count: p.likes_count + inc } : p));
+      if (socialProfile) {
+        setSocialProfile(prev => ({ ...prev, posts: prev.posts.map(p => p.id === postId ? { ...p, has_liked: liked, likes_count: p.likes_count + inc } : p) }));
+      }
+    } catch (e) { console.error('Error like:', e); }
+  };
+
+  const submitPost = async () => {
+    if (!newPostCaption) return;
+    try {
+      await axios.post(`${BACKEND_URL}/posts/`, { user_id: loggedInUser.id, caption: newPostCaption, image_url: newPostImage || 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800&auto=format&fit=crop' });
+      setShowNewPostModal(false); setNewPostCaption(''); setNewPostImage(null);
+      if (currentScreen === 'community') fetchFeed();
+      if (currentScreen === 'socialProfile') fetchProfile(loggedInUser.id);
+    } catch (e) { Alert.alert('Error', 'No se pudo crear el post'); }
+  };
+
+  const fetchComments = async (postId) => {
+    try {
+      const { data } = await axios.get(`${BACKEND_URL}/posts/${postId}/comments`);
+      setComments(data || []); setShowCommentsFor(postId);
+    } catch (e) { console.error('Error comments:', e); }
+  };
+
+  const submitComment = async () => {
+    if (!newComment || !showCommentsFor) return;
+    try {
+      await axios.post(`${BACKEND_URL}/posts/${showCommentsFor}/comments`, { user_id: loggedInUser.id, content: newComment });
+      setNewComment(''); fetchComments(showCommentsFor);
+      setFeed(prev => prev.map(p => p.id === showCommentsFor ? { ...p, comments_count: p.comments_count + 1 } : p));
+    } catch (e) { console.error('Error submit comment:', e); }
+  };
+
+  const fetchInbox = async () => {
+    try { const { data } = await axios.get(`${BACKEND_URL}/messages/${loggedInUser.id}`); setInbox(data || []); } catch (e) { console.error(e); }
+  };
+
+  const fetchChat = async (otherUser) => {
+    try {
+      const { data } = await axios.get(`${BACKEND_URL}/messages/${loggedInUser.id}/${otherUser.id}`);
+      setChatHistory(data || []); setActiveChatUser(otherUser); setCurrentScreen('chatWindow');
+    } catch (e) { console.error(e); }
+  };
+
+  const sendDm = async () => {
+    if (!newDmText || !activeChatUser) return;
+    try {
+      const { data } = await axios.post(`${BACKEND_URL}/messages/`, { sender_id: loggedInUser.id, receiver_id: activeChatUser.id, content: newDmText });
+      setChatHistory([...chatHistory, data]); setNewDmText('');
+    } catch (e) { console.error(e); }
   };
 
   // =====================================================
@@ -1096,19 +1192,259 @@ export default function App() {
   };
 
   // =====================================================
+  // PANTALLAS: FEED Y SOCIAL
+  // =====================================================
+  const renderCommunity = () => (
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <Text style={styles.headerTitle}>FitGram</Text>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity style={styles.iconButtonPrimary} onPress={() => setShowNewPostModal(true)}>
+            <Plus size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconButtonSecondary} onPress={() => { fetchInbox(); setCurrentScreen('inbox'); }}>
+            <MessageSquare size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {loadingFeed ? <ActivityIndicator size="large" color="#6366F1" style={{ marginTop: 40 }} /> :
+        feed.map(post => (
+          <View key={post.id} style={styles.postCard}>
+            <TouchableOpacity style={styles.postHeader} onPress={() => { fetchProfile(post.user_id); setCurrentScreen('socialProfile'); }}>
+              <Image source={{ uri: post.user_avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100' }} style={styles.postAvatar} />
+              <View>
+                <Text style={{ color: '#FAFAFA', fontWeight: '700', fontSize: 15 }}>{post.username || post.user_name}</Text>
+                <Text style={{ color: '#A1A1AA', fontSize: 12 }}>{new Date(post.created_at).toLocaleDateString()}</Text>
+              </View>
+            </TouchableOpacity>
+
+            {post.image_url && <Image source={{ uri: post.image_url }} style={styles.postImage} />}
+
+            <View style={styles.postActions}>
+              <TouchableOpacity style={[styles.postActionBtn, post.has_liked && { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]} onPress={() => toggleLike(post.id)}>
+                <Dumbbell size={24} color={post.has_liked ? '#10B981' : '#FAFAFA'} />
+                <Text style={{ color: post.has_liked ? '#10B981' : '#FAFAFA', marginLeft: 6, fontWeight: '700', fontSize: 15 }}>{post.likes_count}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.postActionBtn} onPress={() => fetchComments(post.id)}>
+                <MessageCircle size={24} color="#FAFAFA" />
+                <Text style={{ color: '#FAFAFA', marginLeft: 6, fontWeight: '700', fontSize: 15 }}>{post.comments_count}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.postActionBtn, { marginLeft: 'auto' }]} onPress={() => fetchChat({ id: post.user_id, name: post.user_name || post.username, avatar_url: post.user_avatar })}>
+                <Send size={24} color="#FAFAFA" />
+              </TouchableOpacity>
+            </View>
+
+            {post.caption ? (
+              <View style={styles.postCaption}>
+                <Text style={{ color: '#FAFAFA', fontSize: 14 }}>
+                  <Text style={{ fontWeight: '700' }}>{post.username || post.user_name} </Text>
+                  {post.caption}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ))
+      }
+    </ScrollView>
+  );
+
+  const renderSocialProfile = () => (
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      <TouchableOpacity style={styles.backButton} onPress={() => { setCurrentScreen('community'); setSocialProfile(null); }}>
+        <ChevronLeft color="#A1A1AA" size={22} />
+        <Text style={styles.backText}>FitGram Feed</Text>
+      </TouchableOpacity>
+
+      {socialProfile ? (
+        <View style={{ alignItems: 'center', marginTop: 16 }}>
+          <Image source={{ uri: socialProfile.avatar_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100' }} style={styles.profileAvatarModal} />
+          <Text style={{ color: '#FAFAFA', fontSize: 24, fontWeight: '800', marginTop: 12 }}>{socialProfile.name}</Text>
+          <Text style={{ color: '#A1A1AA', fontSize: 15 }}>@{socialProfile.username || socialProfile.name.toLowerCase().replace(' ', '')}</Text>
+          <Text style={{ color: '#E4E4E7', fontSize: 14, marginTop: 12, textAlign: 'center', paddingHorizontal: 20 }}>{socialProfile.bio || 'Atleta de FitPro.'}</Text>
+
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 32, marginVertical: 24 }}>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 22, fontWeight: '800' }}>{socialProfile.posts_count || 0}</Text>
+              <Text style={{ color: '#A1A1AA', fontSize: 13 }}>Posts</Text>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 22, fontWeight: '800' }}>{socialProfile.followers_count || 0}</Text>
+              <Text style={{ color: '#A1A1AA', fontSize: 13 }}>Seguidores</Text>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 22, fontWeight: '800' }}>{socialProfile.following_count || 0}</Text>
+              <Text style={{ color: '#A1A1AA', fontSize: 13 }}>Seguidos</Text>
+            </View>
+          </View>
+
+          <View style={styles.profileGrid}>
+            {socialProfile.posts && socialProfile.posts.map(p => (
+              <View key={p.id} style={styles.gridItem}>
+                {p.image_url ? <Image source={{ uri: p.image_url }} style={{ width: '100%', height: '100%' }} /> : <View style={{ width: '100%', height: '100%', backgroundColor: '#27272A' }} />}
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : <ActivityIndicator size="large" color="#6366F1" style={{ marginTop: 40 }} />}
+    </ScrollView>
+  );
+
+  const renderInbox = () => (
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      <TouchableOpacity style={styles.backButton} onPress={() => setCurrentScreen('community')}>
+        <ChevronLeft color="#A1A1AA" size={22} />
+        <Text style={styles.backText}>FitGram Feed</Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.headerTitle, { marginBottom: 20 }]}>Mensajes Directos</Text>
+
+      {inbox.length === 0 ? <Text style={{ color: '#A1A1AA', textAlign: 'center', marginTop: 40, fontSize: 15 }}>No tienes mensajes aún.</Text> :
+        inbox.map(conv => (
+          <TouchableOpacity key={conv.other_user.id} style={styles.dmConvCard} onPress={() => fetchChat(conv.other_user)}>
+            <Image source={{ uri: conv.other_user.avatar_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100' }} style={{ width: 56, height: 56, borderRadius: 28 }} />
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ color: '#FAFAFA', fontWeight: '800', fontSize: 16 }}>{conv.other_user.username || conv.other_user.name}</Text>
+                <Text style={{ color: '#71717A', fontSize: 12 }}>{new Date(conv.last_message.created_at).toLocaleDateString()}</Text>
+              </View>
+              <Text style={{ color: conv.last_message.sender_id === loggedInUser.id ? '#71717A' : '#E4E4E7', fontSize: 14 }} numberOfLines={1}>
+                {conv.last_message.sender_id === loggedInUser.id ? 'Tú: ' : ''}{conv.last_message.content}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ))
+      }
+    </ScrollView>
+  );
+
+  const renderChatWindow = () => (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }} keyboardVerticalOffset={0}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 20, paddingTop: Platform.OS === 'android' ? 40 : 20, borderBottomWidth: 1, borderBottomColor: '#27272A', backgroundColor: '#18181B' }}>
+        <TouchableOpacity style={{ marginRight: 16 }} onPress={() => { setCurrentScreen('inbox'); fetchInbox(); }}>
+          <ChevronLeft size={24} color="#FAFAFA" />
+        </TouchableOpacity>
+        {activeChatUser && (
+          <>
+            <Image source={{ uri: activeChatUser.avatar_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100' }} style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }} />
+            <Text style={{ color: '#FAFAFA', fontSize: 18, fontWeight: '800' }}>{activeChatUser.username || activeChatUser.name}</Text>
+          </>
+        )}
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 20 }}>
+        {chatHistory.map(msg => {
+          const isMe = msg.sender_id === loggedInUser.id;
+          return (
+            <View key={msg.id} style={{
+              alignSelf: isMe ? 'flex-end' : 'flex-start',
+              backgroundColor: isMe ? '#6366F1' : '#27272A',
+              paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20,
+              borderBottomRightRadius: isMe ? 4 : 20,
+              borderBottomLeftRadius: !isMe ? 4 : 20,
+              maxWidth: '85%', marginBottom: 12
+            }}>
+              <Text style={{ color: '#fff', fontSize: 15, lineHeight: 22 }}>{msg.content}</Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      <View style={{ flexDirection: 'row', padding: 16, backgroundColor: '#18181B', borderTopWidth: 1, borderTopColor: '#27272A', alignItems: 'center', paddingBottom: Platform.OS === 'ios' ? 32 : 16 }}>
+        <TextInput
+          style={[styles.input, { flex: 1, padding: 14, borderRadius: 24, fontSize: 15, textAlign: 'left', marginBottom: 0 }]}
+          placeholder="Escribe un mensaje..."
+          placeholderTextColor="#A1A1AA"
+          value={newDmText}
+          onChangeText={setNewDmText}
+        />
+        <TouchableOpacity style={[styles.iconButtonPrimary, { marginLeft: 12, width: 48, height: 48, borderRadius: 24, backgroundColor: '#6366F1', justifyContent: 'center', alignItems: 'center' }]} onPress={sendDm}>
+          <Send size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+
+  // =====================================================
   // RENDER PRINCIPAL
   // =====================================================
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
+      {currentScreen !== 'chatWindow' ? (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
 
-        {currentScreen === 'home' && renderHome()}
-        {currentScreen === 'workout' && renderWorkout()}
-        {currentScreen === 'progress' && renderProgress()}
-        {currentScreen === 'nutrition' && renderNutrition()}
-        {currentScreen === 'profile' && renderProfile()}
+          {currentScreen === 'home' && renderHome()}
+          {currentScreen === 'workout' && renderWorkout()}
+          {currentScreen === 'progress' && renderProgress()}
+          {currentScreen === 'community' && renderCommunity()}
+          {currentScreen === 'socialProfile' && renderSocialProfile()}
+          {currentScreen === 'inbox' && renderInbox()}
+          {currentScreen === 'nutrition' && renderNutrition()}
+          {currentScreen === 'profile' && renderProfile()}
 
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      ) : (
+        renderChatWindow()
+      )}
+
+      {/* Social Modals */}
+      <Modal visible={showNewPostModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 20, fontWeight: '800' }}>Nuevo Post</Text>
+              <TouchableOpacity onPress={() => setShowNewPostModal(false)}>
+                <X size={24} color="#A1A1AA" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={{ height: 200, backgroundColor: '#27272A', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 20, overflow: 'hidden' }} onPress={async () => {
+              // Simulating file pick
+              setNewPostImage('https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800');
+            }}>
+              {newPostImage ? <Image source={{ uri: newPostImage }} style={{ width: '100%', height: '100%' }} /> : <><Camera size={36} color="#A1A1AA" /><Text style={{ color: '#A1A1AA', marginTop: 12, fontWeight: '600' }}>Toca para subir foto</Text></>}
+            </TouchableOpacity>
+            <TextInput style={[styles.input, { height: 100, textAlign: 'left', textAlignVertical: 'top', fontSize: 15, padding: 16, borderRadius: 16, marginBottom: 20 }]} placeholder="Escribe un pie de foto... #entrenamiento" placeholderTextColor="#71717A" multiline value={newPostCaption} onChangeText={setNewPostCaption} />
+            <TouchableOpacity style={styles.saveButton} onPress={submitPost}>
+              <Text style={styles.saveButtonText}>Publicar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showCommentsFor !== null} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { marginTop: 'auto', marginBottom: 0, height: '75%', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#27272A' }}>
+              <Text style={{ color: '#FAFAFA', fontSize: 18, fontWeight: '800' }}>Comentarios</Text>
+              <TouchableOpacity onPress={() => setShowCommentsFor(null)}>
+                <X size={24} color="#A1A1AA" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ flex: 1 }}>
+              {comments.length === 0 ? <Text style={{ color: '#A1A1AA', textAlign: 'center', marginTop: 40 }}>Sé el primero en comentar.</Text> :
+                comments.map(c => (
+                  <View key={c.id} style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+                    <Image source={{ uri: c.user_avatar || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100' }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#FAFAFA', fontWeight: '700', fontSize: 15, marginBottom: 4 }}>{c.username || c.user_name}</Text>
+                      <Text style={{ color: '#D4D4D8', fontSize: 14, lineHeight: 20 }}>{c.content}</Text>
+                      <Text style={{ color: '#71717A', fontSize: 11, marginTop: 4 }}>{new Date(c.created_at).toLocaleDateString()}</Text>
+                    </View>
+                  </View>
+                ))
+              }
+            </ScrollView>
+            <View style={{ flexDirection: 'row', paddingTop: 16, borderTopWidth: 1, borderTopColor: '#27272A', alignItems: 'center' }}>
+              <TextInput style={[styles.input, { flex: 1, padding: 12, borderRadius: 24, fontSize: 14, textAlign: 'left', marginBottom: 0 }]} placeholder="Agrega un comentario..." placeholderTextColor="#A1A1AA" value={newComment} onChangeText={setNewComment} />
+              <TouchableOpacity style={[styles.iconButtonPrimary, { marginLeft: 12, width: 44, height: 44, borderRadius: 22, backgroundColor: '#6366F1', justifyContent: 'center', alignItems: 'center' }]} onPress={submitComment}>
+                <Send size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* BOTTOM TAB BAR */}
       <View style={styles.tabBar}>
@@ -1142,6 +1478,14 @@ export default function App() {
         >
           <Utensils color={currentScreen === 'nutrition' ? '#10B981' : '#52525B'} size={22} />
           <Text style={[styles.tabLabel, currentScreen === 'nutrition' && { color: '#10B981' }]}>Nutrición</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => { fetchFeed(); setCurrentScreen('community'); }}
+        >
+          <Users color={currentScreen === 'community' ? '#6366F1' : '#52525B'} size={22} />
+          <Text style={[styles.tabLabel, currentScreen === 'community' && styles.tabLabelActive]}>Comunidad</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1215,11 +1559,11 @@ const styles = StyleSheet.create({
   // BOTTOM TAB BAR
   tabBar: {
     flexDirection: 'row', backgroundColor: '#0F0F11', borderTopWidth: 1,
-    borderTopColor: '#1C1C1F', paddingVertical: 10, paddingHorizontal: 16,
+    borderTopColor: '#1C1C1F', paddingVertical: 10, paddingHorizontal: 4,
     paddingBottom: Platform.OS === 'ios' ? 24 : 12,
   },
   tabItem: { flex: 1, alignItems: 'center', gap: 4 },
-  tabLabel: { color: '#52525B', fontSize: 11, fontWeight: '600' },
+  tabLabel: { color: '#52525B', fontSize: 10, fontWeight: '600' },
   tabLabelActive: { color: '#6366F1' },
 
   // BACK BUTTON
@@ -1392,4 +1736,34 @@ const styles = StyleSheet.create({
   macroLabel: {
     color: '#71717A', fontSize: 10, fontWeight: '600', textTransform: 'uppercase', marginTop: 2,
   },
+
+  // SOCIAL MODALS & BUTTONS
+  iconButtonPrimary: { backgroundColor: '#6366F1', padding: 12, borderRadius: 12 },
+  iconButtonSecondary: { backgroundColor: '#27272A', padding: 12, borderRadius: 12 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#18181B', borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#27272A' },
+  profileAvatarModal: { width: 90, height: 90, borderRadius: 45, borderWidth: 2, borderColor: '#6366F1' },
+
+  profileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  gridItem: { width: '31%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden' },
+
+  // DM CARDS
+  dmConvCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: '#18181B', padding: 16, borderRadius: 16,
+    marginBottom: 12, borderWidth: 1, borderColor: '#27272A'
+  },
+
+  // POST CARDS
+  postCard: {
+    backgroundColor: '#18181B', borderRadius: 24, padding: 20,
+    marginBottom: 20, borderWidth: 1, borderColor: '#27272A'
+  },
+  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  postAvatar: { width: 44, height: 44, borderRadius: 22 },
+  postImage: { width: '100%', aspectRatio: 1, borderRadius: 16, marginBottom: 16 },
+  postActions: { flexDirection: 'row', gap: 16, marginBottom: 16 },
+  postActionBtn: { flexDirection: 'row', alignItems: 'center', padding: 8, paddingHorizontal: 12, borderRadius: 12 },
+  postCaption: { paddingTop: 4 }
 });
