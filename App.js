@@ -1030,7 +1030,7 @@ export default function App() {
 
         {/* Header */}
         <View style={{ marginBottom: 24 }}>
-          <Text style={styles.dateText}>TEAM PATO COACHING</Text>
+          <Text style={styles.dateText}>AGUSTIN ELIZONDO TEAM</Text>
           <Text style={styles.headerTitle}>Plan Nutricional</Text>
           <Text style={{ color: '#71717A', fontSize: 14, marginTop: 4 }}>🔥 Objetivo: Recomposición corporal</Text>
         </View>
