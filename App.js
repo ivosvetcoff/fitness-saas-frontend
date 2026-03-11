@@ -585,13 +585,15 @@ export default function App() {
   // PANTALLA: WORKOUT (ejercicios del día)
   // =====================================================
   const renderWorkoutDaysList = () => {
-    const dayNames = {
-      1: 'DÍA 1 – Pecho + Hombros laterales/posteriores + Bíceps',
-      2: 'DÍA 2 – Piernas (isquios/glúteos) + Pantorrillas',
-      3: 'DÍA 3 – Espalda + Deltoides posteriores + Tríceps',
-      4: 'DÍA 4 – Piernas (cuádriceps + aductores) + Pantorrillas',
-      5: 'DÍA 5 – Hombros + Pectorales + Brazos',
-    };
+    // Build day names dynamically from exercises (day_name field set by backend)
+    const dayNamesFromData = {};
+    exercises.forEach(e => {
+      if (e.day_number && e.day_name && !dayNamesFromData[e.day_number]) {
+        dayNamesFromData[e.day_number] = e.day_name;
+      }
+    });
+    const totalDays = sessionData?.total_days || Math.max(...exercises.map(e => e.day_number || 1), 0) || 5;
+    const dayNumbers = Array.from({ length: totalDays }, (_, i) => i + 1);
 
     return (
       <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
@@ -602,7 +604,7 @@ export default function App() {
           <Text style={{ color: '#A1A1AA', fontSize: 14, marginTop: 4 }}>Seleccioná el día para comenzar</Text>
         </View>
 
-        {[1, 2, 3, 4, 5].map(day => {
+        {dayNumbers.map(day => {
           const dayExercises = exercises.filter(e => e.day_number === day);
           const exerciseCount = dayExercises.length;
 
@@ -617,7 +619,7 @@ export default function App() {
                 <Dumbbell color={sessionData?.current_day === day ? "#6366F1" : "#FAFAFA"} size={28} />
               </View>
               <View style={styles.mainCardContent}>
-                <Text style={styles.mainCardTitle}>{dayNames[day]}</Text>
+                <Text style={styles.mainCardTitle}>{dayNamesFromData[day] || `Día ${day}`}</Text>
                 <Text style={styles.mainCardSubtitle}>
                   {exerciseCount > 0 ? `${exerciseCount} Ejercicios asignados` : 'Libre'}
                 </Text>
@@ -647,13 +649,7 @@ export default function App() {
         <View style={styles.header}>
           <Text style={styles.dateText}>Día {selectedDay}</Text>
           <Text style={styles.headerTitle}>
-            {{
-              1: 'Pecho + Hombros lat/post + Bíceps',
-              2: 'Piernas (isquios) + Pantorrillas',
-              3: 'Espalda + Deltoides post + Tríceps',
-              4: 'Piernas (cuádriceps) + Pantorrillas',
-              5: 'Hombros + Pectorales + Brazos'
-            }[selectedDay] || sessionData?.routine_name}
+            {exercises.find(e => e.day_number === selectedDay && e.day_name)?.day_name || sessionData?.routine_name}
           </Text>
         </View>
 
