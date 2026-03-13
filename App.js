@@ -213,6 +213,7 @@ export default function App() {
   const [profilePic, setProfilePic] = useState(null);
   const [progressPhotos, setProgressPhotos] = useState([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState(null);
 
   // Timer
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -1097,9 +1098,9 @@ export default function App() {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
           {progressPhotos.length > 0 ? (
             progressPhotos.map((photo) => (
-              <View key={photo.id} style={{ width: '33%', aspectRatio: 1, backgroundColor: '#18181B', marginBottom: 2 }}>
+              <TouchableOpacity key={photo.id} style={{ width: '33%', aspectRatio: 1, backgroundColor: '#18181B', marginBottom: 2 }} onPress={() => setSelectedPhotoUrl(photo.photo_url)}>
                 <Image source={{ uri: photo.photo_url }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
-              </View>
+              </TouchableOpacity>
             ))
           ) : (
             <View style={{ width: '100%', padding: 40, alignItems: 'center' }}>
@@ -1108,6 +1109,18 @@ export default function App() {
             </View>
           )}
         </View>
+
+        {/* Full Screen Photo Modal */}
+        <Modal visible={!!selectedPhotoUrl} transparent={true} animationType="fade" onRequestClose={() => setSelectedPhotoUrl(null)}>
+          <View style={{ flex: 1, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' }}>
+            <TouchableOpacity style={{ position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 10 }} onPress={() => setSelectedPhotoUrl(null)}>
+              <X color="#FFF" size={32} />
+            </TouchableOpacity>
+            {selectedPhotoUrl && (
+              <Image source={{ uri: selectedPhotoUrl }} style={{ width: '100%', height: '80%', resizeMode: 'contain' }} />
+            )}
+          </View>
+        </Modal>
 
       </ScrollView>
     );
