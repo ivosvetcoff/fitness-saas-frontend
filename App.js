@@ -163,6 +163,7 @@ export default function App() {
   const [exercises, setExercises] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [isFinishing, setIsFinishing] = useState(false);
+  // Hardcoded for now, but should ideally be retrieved from a login response or storage
   const STUDENT_ID = "123e4567-e89b-12d3-a456-426614174000";
 
   // Fake User object for generic actions (matching FitPro setup)
@@ -275,7 +276,7 @@ export default function App() {
         // Fetch ALL exercises for this routine instead of just the next workout
         const allResp = await axios.get(`${BACKEND_URL}/routines/${response.data.routine_id}/exercises`);
         const allLoadedExercises = allResp.data.map((ex) => {
-          const name = ex.exercises?.name || `Ejercicio ${ex.exercise_id.substring(0, 4)}`;
+          const name = ex.exercises?.name || `Ejercicio ${ex.exercise_id ? ex.exercise_id.substring(0, 4) : '???'}`;
           return {
             id: ex.exercise_id,
             routine_id: ex.routine_id,
@@ -284,12 +285,13 @@ export default function App() {
             targetSets: ex.sets || 3,
             setsCompleted: 0,
             day_number: ex.day_number,
+            day_name: ex.day_name, // Capture day name from backend
             image: EXERCISE_IMAGES[name] || null,
             repScheme: CUSTOM_REP_SCHEMES[name] || null,
           };
         });
         // Sort by day and id to stay consistent
-        setExercises(allLoadedExercises.sort((a, b) => a.day_number - b.day_number));
+        setExercises(allLoadedExercises.sort((a, b) => (a.day_number || 0) - (b.day_number || 0)));
       }
     } catch (error) {
       console.error("Error fetching exercises:", error);
@@ -592,7 +594,7 @@ export default function App() {
         dayNamesFromData[e.day_number] = e.day_name;
       }
     });
-    const totalDays = sessionData?.total_days || Math.max(...exercises.map(e => e.day_number || 1), 0) || 5;
+    const totalDays = sessionData?.total_days || (exercises.length > 0 ? Math.max(...exercises.map(e => e.day_number || 1)) : 5);
     const dayNumbers = Array.from({ length: totalDays }, (_, i) => i + 1);
 
     return (
