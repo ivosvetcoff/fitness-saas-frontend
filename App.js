@@ -272,7 +272,8 @@ export default function App() {
           routine_id: response.data.routine_id,
           routine_name: response.data.routine_name,
           current_day: response.data.current_day,
-          total_days: response.data.total_days
+          total_days: response.data.total_days,
+          all_days_info: response.data.all_days_info || []
         });
 
         // Fetch ALL exercises for this routine instead of just the next workout
@@ -292,6 +293,15 @@ export default function App() {
             repScheme: CUSTOM_REP_SCHEMES[name] || null,
           };
         });
+        setExercises(allLoadedExercises);
+      } else {
+        setExercises([]);
+      }
+    } catch (error) {
+      console.error("Error fetching exercises:", error);
+      setExercises([]);
+    }
+  };
   const fetchMyPoints = async (studentId) => {
     try {
       const id = studentId || loggedInUser?.id;
@@ -323,7 +333,7 @@ export default function App() {
     if (!id) return;
     setLoadingNutrition(true);
     try {
-      const response = await axios.get(`${BACKEND_URL}/student/${id}/nutrition`);
+      const response = await axios.get(`${BACKEND_URL}/nutrition/${id}`);
       setNutritionPlan(response.data);
     } catch (error) {
       console.error('Error fetching nutrition:', error);
@@ -626,15 +636,13 @@ export default function App() {
   // PANTALLA: WORKOUT (ejercicios del día)
   // =====================================================
   const renderWorkoutDaysList = () => {
-    // Build day names dynamically from exercises (day_name field set by backend)
-    const dayNamesFromData = {};
-    exercises.forEach(e => {
-      if (e.day_number && e.day_name && !dayNamesFromData[e.day_number]) {
-        dayNamesFromData[e.day_number] = e.day_name;
-      }
-    });
-    const totalDays = sessionData?.total_days || (exercises.length > 0 ? Math.max(...exercises.map(e => e.day_number || 1)) : 5);
-    const dayNumbers = Array.from({ length: totalDays }, (_, i) => i + 1);
+    // Si tenemos la información detallada de los días desde el backend, la usamos
+    const daysInfo = sessionData?.all_days_info && sessionData.all_days_info.length > 0 
+      ? sessionData.all_days_info 
+      : Array.from(
+          { length: sessionData?.total_days || (exercises.length > 0 ? Math.max(...exercises.map(e => e.day_number || 1)) : 5) }, 
+          (_, i) => ({ day_number: i + 1, day_name: `Día ${i + 1}` })
+        );
 
     return (
       <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
@@ -645,9 +653,12 @@ export default function App() {
           <Text style={{ color: '#A1A1AA', fontSize: 14, marginTop: 4 }}>Seleccioná el día para comenzar</Text>
         </View>
 
-        {dayNumbers.map(day => {
+        {daysInfo.map(dayInfo => {
+          const day = dayInfo.day_number;
           const dayExercises = exercises.filter(e => e.day_number === day);
           const exerciseCount = dayExercises.length;
+          // Si el ejercicio ya trajo su propio nombre del backend, prevalece, si no, el del all_days_info
+          const exName = dayExercises.length > 0 && dayExercises[0].day_name ? dayExercises[0].day_name : dayInfo.day_name;
 
           return (
             <TouchableOpacity
@@ -660,7 +671,7 @@ export default function App() {
                 <Dumbbell color={sessionData?.current_day === day ? "#6366F1" : "#FAFAFA"} size={28} />
               </View>
               <View style={styles.mainCardContent}>
-                <Text style={styles.mainCardTitle}>{dayNamesFromData[day] || `Día ${day}`}</Text>
+                <Text style={styles.mainCardTitle}>{exName}</Text>
                 <Text style={styles.mainCardSubtitle}>
                   {exerciseCount > 0 ? `${exerciseCount} Ejercicios asignados` : 'Libre'}
                 </Text>
