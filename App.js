@@ -211,6 +211,8 @@ export default function App() {
 
   // Profile & Social
   const [profilePic, setProfilePic] = useState(null);
+  const [progressPhotos, setProgressPhotos] = useState([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Timer
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -235,7 +237,7 @@ export default function App() {
     setIsTimerActive(true);
   };
 
-  const handleImagePick = async () => {
+  const updateProfileAvatar = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -245,6 +247,50 @@ export default function App() {
 
     if (!result.canceled) {
       setProfilePic(result.assets[0].uri);
+    }
+  };
+
+  const uploadProgressPhoto = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      setIsUploadingPhoto(true);
+      try {
+        const localUri = result.assets[0].uri;
+        const filename = localUri.split('/').pop() || 'photo.jpg';
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image`;
+
+        const formData = new FormData();
+        formData.append('file', { uri: localUri, name: filename, type });
+
+        const response = await axios.post(`${BACKEND_URL}/student/${loggedInUser.id}/photos`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        if (response.data && response.data.photo_url) {
+          Alert.alert("Éxito", "Foto de progreso subida correctamente!");
+          fetchProgressPhotos(loggedInUser.id);
+        }
+      } catch (error) {
+        console.error("Error al subir foto:", error);
+        Alert.alert("Error", "Hubo un problema al subir tu foto.");
+      } finally {
+        setIsUploadingPhoto(false);
+      }
+    }
+  };
+
+  const fetchProgressPhotos = async (studentId) => {
+    try {
+      const { data } = await axios.get(`${BACKEND_URL}/student/${studentId}/photos`);
+      setProgressPhotos(data || []);
+    } catch (e) {
+      console.error("Error fetching progress photos:", e);
     }
   };
 
@@ -370,6 +416,7 @@ export default function App() {
         fetchMyPoints(user.id);
         fetchNutritionPlan(user.id);
         fetchRankings();
+        fetchProgressPhotos(user.id);
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -971,7 +1018,7 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         {/* Top Section - Avatar and Stats */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <TouchableOpacity onPress={handleImagePick} style={{ position: 'relative' }}>
+          <TouchableOpacity onPress={updateProfileAvatar} style={{ position: 'relative' }}>
             <View style={{
               width: 90, height: 90, borderRadius: 45, backgroundColor: '#27272A',
               alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#6366F1', overflow: 'hidden'
@@ -1025,31 +1072,41 @@ export default function App() {
           </TouchableOpacity>
           <TouchableOpacity
             style={{ flex: 1, backgroundColor: '#6366F1', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}
-            onPress={handleImagePick}
+            onPress={uploadProgressPhoto}
+            disabled={isUploadingPhoto}
           >
-            <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '600' }}>Subir Progreso</Text>
+            {isUploadingPhoto ? (
+              <ActivityIndicator color="#FAFAFA" size="small" />
+            ) : (
+              <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '600' }}>Subir Progreso</Text>
+            )}
           </TouchableOpacity>
         </View>
 
         {/* Feed Icons */}
         <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#27272A', marginBottom: 2 }}>
           <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#FAFAFA' }}>
-            <Activity color="#FAFAFA" size={24} />
+            <Camera color="#FAFAFA" size={24} />
           </View>
           <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
-            <Camera color="#52525B" size={24} />
+            <Activity color="#52525B" size={24} />
           </View>
         </View>
 
         {/* Grid Feed */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
-          {dummyFeed.map((_, i) => (
-            <View key={i} style={{ width: '33%', aspectRatio: 1, backgroundColor: '#18181B', marginBottom: 2 }}>
-              <View style={{ flex: 1, borderWidth: 1, borderColor: '#09090B', alignItems: 'center', justifyContent: 'center' }}>
-                <Dumbbell color="#27272A" size={24} />
+          {progressPhotos.length > 0 ? (
+            progressPhotos.map((photo) => (
+              <View key={photo.id} style={{ width: '33%', aspectRatio: 1, backgroundColor: '#18181B', marginBottom: 2 }}>
+                <Image source={{ uri: photo.photo_url }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
               </View>
+            ))
+          ) : (
+            <View style={{ width: '100%', padding: 40, alignItems: 'center' }}>
+              <Camera color="#3F3F46" size={48} />
+              <Text style={{ color: '#71717A', marginTop: 12 }}>No has subido fotos aún.</Text>
             </View>
-          ))}
+          )}
         </View>
 
       </ScrollView>
