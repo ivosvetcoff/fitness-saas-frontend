@@ -158,16 +158,16 @@ export default function App() {
   // =====================================================
   // ESTADO GLOBAL
   // =====================================================
-  const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'workout' | 'progress' | 'nutrition' | 'profile' | 'community' | 'socialProfile' | 'inbox' | 'chatWindow'
+  const [currentScreen, setCurrentScreen] = useState('login'); // 'login' | 'home' | 'workout' | ...
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [sessionData, setSessionData] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [isFinishing, setIsFinishing] = useState(false);
-  // Hardcoded for now, but should ideally be retrieved from a login response or storage
-  const STUDENT_ID = "123e4567-e89b-12d3-a456-426614174000";
-
-  // Fake User object for generic actions (matching FitPro setup)
-  const loggedInUser = { id: STUDENT_ID, name: 'Atleta', username: 'atleta_test' };
+  const [loggedInUser, setLoggedInUser] = useState(null);
 
   // Social & Community States
   const [feed, setFeed] = useState([]);
@@ -262,9 +262,11 @@ export default function App() {
   // =====================================================
   // FETCH DATA
   // =====================================================
-  const fetchExercises = async () => {
+  const fetchExercises = async (studentId) => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/student/${STUDENT_ID}/next-workout`);
+      const id = studentId || loggedInUser?.id;
+      if (!id) return;
+      const response = await axios.get(`${BACKEND_URL}/student/${id}/next-workout`);
       if (response.data && response.data.exercises) {
         setSessionData({
           routine_id: response.data.routine_id,
@@ -290,44 +292,38 @@ export default function App() {
             repScheme: CUSTOM_REP_SCHEMES[name] || null,
           };
         });
-        // Sort by day and id to stay consistent
-        setExercises(allLoadedExercises.sort((a, b) => (a.day_number || 0) - (b.day_number || 0)));
+  const fetchMyPoints = async (studentId) => {
+    try {
+      const id = studentId || loggedInUser?.id;
+      if (!id) return;
+      const response = await axios.get(`${BACKEND_URL}/student/${id}/performance`);
+      if (response.data && response.data.total_xp !== undefined) {
+        setTotalXp(response.data.total_xp);
       }
     } catch (error) {
-      console.error("Error fetching exercises:", error);
+      console.error("Error fetching points:", error);
     }
   };
 
-  useEffect(() => { fetchExercises(); fetchMyPoints(); fetchNutritionPlan(); }, []);
-
-  // Fetch student XP points
-  const fetchMyPoints = async () => {
-    try {
-      const response = await axios.get(`${BACKEND_URL}/student/${STUDENT_ID}/points`);
-      setTotalXp(response.data?.total_xp || 0);
-    } catch (error) {
-      console.error('Error fetching points:', error);
-    }
-  };
-
-  // Fetch rankings
   const fetchRankings = async () => {
     setLoadingRankings(true);
     try {
       const response = await axios.get(`${BACKEND_URL}/rankings`);
-      setRankings(response.data?.rankings || []);
+      setRankings(response.data);
     } catch (error) {
-      console.error('Error fetching rankings:', error);
+      console.error("Error fetching rankings:", error);
     } finally {
       setLoadingRankings(false);
     }
   };
 
   // Fetch nutrition plan
-  const fetchNutritionPlan = async () => {
+  const fetchNutritionPlan = async (studentId) => {
+    const id = studentId || loggedInUser?.id;
+    if (!id) return;
     setLoadingNutrition(true);
     try {
-      const response = await axios.get(`${BACKEND_URL}/student/${STUDENT_ID}/nutrition`);
+      const response = await axios.get(`${BACKEND_URL}/student/${id}/nutrition`);
       setNutritionPlan(response.data);
     } catch (error) {
       console.error('Error fetching nutrition:', error);
@@ -335,6 +331,49 @@ export default function App() {
       setLoadingNutrition(false);
     }
   };
+
+  const handleLogin = async () => {
+    if (!loginEmail || !loginPassword) {
+      Alert.alert("Error", "Por favor ingresa email y contraseña");
+      return;
+    }
+    setIsLoggingIn(true);
+    try {
+      const response = await axios.post(`${BACKEND_URL}/auth/login`, {
+        email: loginEmail.toLowerCase().trim(),
+        password: loginPassword
+      });
+      
+      if (response.data && response.data.id) {
+        const user = {
+          id: response.data.id,
+          name: response.data.name,
+          username: response.data.email.split('@')[0],
+          student_id: response.data.id
+        };
+        setLoggedInUser(user);
+        setIsAuthenticated(true);
+        setCurrentScreen('home');
+        
+        // Fetch data for the logged in user
+        fetchExercises(user.id);
+        fetchMyPoints(user.id);
+        fetchNutritionPlan(user.id);
+        fetchRankings();
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      Alert.alert("Error de Login", "Credenciales incorrectas o cuenta inactiva.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Initial fetch removed, now handled post-login
+  useEffect(() => {
+    // If we were using AsyncStorage for persistence, we would check it here
+  }, []);
+
 
   // =====================================================
   // SOCIAL FETCHERS
@@ -827,7 +866,7 @@ export default function App() {
   // PANTALLA: PROGRESO / RANKING
   // =====================================================
   const renderProgress = () => {
-    const myRanking = rankings.find(r => r.student_id === STUDENT_ID);
+    const myRanking = rankings.find(r => r.student_id === loggedInUser?.id);
     const myPosition = myRanking?.position || '—';
     const positionEmojis = ['', '🥇', '🥈', '🥉'];
 
@@ -1365,6 +1404,55 @@ export default function App() {
     </KeyboardAvoidingView>
   );
 
+  const renderLogin = () => (
+    <ScrollView contentContainerStyle={[styles.scrollContent, { justifyContent: 'center', flexGrow: 1 }]}>
+      <View style={{ alignItems: 'center', marginBottom: 40 }}>
+        <Dumbbell color="#6366F1" size={60} />
+        <Text style={[styles.headerTitle, { fontSize: 32, marginTop: 10 }]}>Impera Fitness</Text>
+        <Text style={{ color: '#71717A', fontSize: 16, marginTop: 4 }}>Acceso Alumnos</Text>
+      </View>
+
+      <View style={{ gap: 16 }}>
+        <View>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={[styles.input, { textAlign: 'left', fontSize: 16 }]}
+            placeholder="tu@email.com"
+            placeholderTextColor="#52525B"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={loginEmail}
+            onChangeText={setLoginEmail}
+          />
+        </View>
+
+        <View>
+          <Text style={styles.label}>Contraseña</Text>
+          <TextInput
+            style={[styles.input, { textAlign: 'left', fontSize: 16 }]}
+            placeholder="••••••••"
+            placeholderTextColor="#52525B"
+            secureTextEntry
+            value={loginPassword}
+            onChangeText={setLoginPassword}
+          />
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.saveButton, { marginTop: 10 }]} 
+          onPress={handleLogin}
+          disabled={isLoggingIn}
+        >
+          {isLoggingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Entrar</Text>}
+        </TouchableOpacity>
+        
+        <Text style={{ color: '#52525B', textAlign: 'center', marginTop: 20, fontSize: 13 }}>
+          ¿No tienes acceso? Consulta con tu profesor.
+        </Text>
+      </View>
+    </ScrollView>
+  );
+
   // =====================================================
   // RENDER PRINCIPAL
   // =====================================================
@@ -1373,6 +1461,7 @@ export default function App() {
       {currentScreen !== 'chatWindow' ? (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardView}>
 
+          {currentScreen === 'login' && renderLogin()}
           {currentScreen === 'home' && renderHome()}
           {currentScreen === 'workout' && renderWorkout()}
           {currentScreen === 'progress' && renderProgress()}
