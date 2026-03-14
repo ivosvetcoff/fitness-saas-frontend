@@ -1172,7 +1172,7 @@ export default function App() {
         </View>
 
         {/* Action Buttons */}
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
           <TouchableOpacity
             style={{ flex: 1, backgroundColor: '#27272A', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}
             onPress={() => { setProfileTab('metrics'); fetchBodyMetrics(); }}
@@ -1191,6 +1191,19 @@ export default function App() {
             )}
           </TouchableOpacity>
         </View>
+        <TouchableOpacity
+          style={{ backgroundColor: 'transparent', paddingVertical: 8, borderRadius: 8, alignItems: 'center', marginBottom: 24, borderWidth: 1, borderColor: '#3F3F46' }}
+          onPress={() => {
+            setIsAuthenticated(false);
+            setLoggedInUser(null);
+            setCurrentScreen('login');
+            setSessionData(null);
+            setLoginEmail('');
+            setLoginPassword('');
+          }}
+        >
+          <Text style={{ color: '#71717A', fontSize: 13, fontWeight: '600' }}>Cerrar sesión</Text>
+        </TouchableOpacity>
 
         {/* Tabs */}
         <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#27272A', marginBottom: 2 }}>
@@ -1821,7 +1834,7 @@ export default function App() {
       </Modal>
 
       {/* BOTTOM TAB BAR */}
-      <View style={styles.tabBar}>
+      {isAuthenticated && <View style={styles.tabBar}>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => setCurrentScreen('home')}
@@ -1872,7 +1885,7 @@ export default function App() {
           <User color={currentScreen === 'profile' ? '#6366F1' : '#52525B'} size={22} />
           <Text style={[styles.tabLabel, currentScreen === 'profile' && styles.tabLabelActive]}>Perfil</Text>
         </TouchableOpacity>
-      </View>
+      </View>}
     </SafeAreaView>
   );
 }
