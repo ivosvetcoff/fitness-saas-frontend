@@ -193,6 +193,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [nextTarget, setNextTarget] = useState(null);
   const [successMode, setSuccessMode] = useState(false);
+  const [initialSuggestion, setInitialSuggestion] = useState(null); // sugerencia pre-ejercicio (autoregulación)
 
   // XP / Points system
   const [totalXp, setTotalXp] = useState(0);
@@ -214,6 +215,12 @@ export default function App() {
   const [progressPhotos, setProgressPhotos] = useState([]);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState(null);
+
+  // Body metrics
+  const [bodyMetrics, setBodyMetrics] = useState([]);
+  const [profileTab, setProfileTab] = useState('photos'); // 'photos' | 'metrics'
+  const [savingMetrics, setSavingMetrics] = useState(false);
+  const [metricsForm, setMetricsForm] = useState({ peso: '', masa_muscular: '', masa_grasa: '', cintura: '', cadera: '' });
 
   // Timer
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -247,7 +254,28 @@ export default function App() {
     });
 
     if (!result.canceled) {
-      setProfilePic(result.assets[0].uri);
+      const localUri = result.assets[0].uri;
+      setProfilePic(localUri); // mostrar inmediatamente mientras sube
+
+      try {
+        const filename = localUri.split('/').pop() || 'avatar.jpg';
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : 'image/jpeg';
+        const formData = new FormData();
+        formData.append('file', { uri: localUri, name: filename, type });
+
+        const resp = await axios.post(
+          `${BACKEND_URL}/student/${loggedInUser.id}/profile-photo`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+        if (resp.data?.photo_url) {
+          setProfilePic(resp.data.photo_url);
+        }
+      } catch (e) {
+        console.error('Error subiendo foto de perfil:', e);
+        // La foto local sigue visible aunque falle la subida
+      }
     }
   };
 
@@ -283,6 +311,36 @@ export default function App() {
       } finally {
         setIsUploadingPhoto(false);
       }
+    }
+  };
+
+  const fetchBodyMetrics = async (studentId) => {
+    const id = studentId || loggedInUser?.id;
+    if (!id) return;
+    try {
+      const { data } = await axios.get(`${BACKEND_URL}/student/${id}/body-metrics`);
+      setBodyMetrics(data || []);
+    } catch (e) { console.error('Error fetching body metrics:', e); }
+  };
+
+  const saveBodyMetrics = async () => {
+    if (!metricsForm.peso) { Alert.alert('Error', 'El peso es obligatorio.'); return; }
+    setSavingMetrics(true);
+    try {
+      await axios.post(`${BACKEND_URL}/student/${loggedInUser.id}/body-metrics`, {
+        peso: parseFloat(metricsForm.peso),
+        masa_muscular: metricsForm.masa_muscular ? parseFloat(metricsForm.masa_muscular) : null,
+        masa_grasa: metricsForm.masa_grasa ? parseFloat(metricsForm.masa_grasa) : null,
+        cintura: metricsForm.cintura ? parseFloat(metricsForm.cintura) : null,
+        cadera: metricsForm.cadera ? parseFloat(metricsForm.cadera) : null,
+      });
+      Alert.alert('¡Guardado!', 'Tus métricas fueron registradas.');
+      setMetricsForm({ peso: '', masa_muscular: '', masa_grasa: '', cintura: '', cadera: '' });
+      fetchBodyMetrics();
+    } catch (e) {
+      Alert.alert('Error', 'No se pudieron guardar las métricas.');
+    } finally {
+      setSavingMetrics(false);
     }
   };
 
@@ -416,13 +474,19 @@ export default function App() {
         setLoggedInUser(user);
         setIsAuthenticated(true);
         setCurrentScreen('home');
-        
+
+        // Cargar avatar guardado si existe
+        if (response.data.avatar_url) {
+          setProfilePic(response.data.avatar_url);
+        }
+
         // Fetch data for the logged in user
         fetchExercises(user.id);
         fetchMyPoints(user.id);
         fetchNutritionPlan(user.id);
         fetchRankings();
         fetchProgressPhotos(user.id);
+        fetchBodyMetrics(user.id);
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -517,7 +581,7 @@ export default function App() {
   // =====================================================
   // HANDLERS
   // =====================================================
-  const toggleExpand = (id) => {
+  const toggleExpand = async (id) => {
     // Bloquear expansión si el ejercicio ya completó todas sus series
     const exercise = exercises.find(ex => ex.id === id);
     if (exercise && exercise.setsCompleted >= exercise.targetSets) return;
@@ -525,10 +589,25 @@ export default function App() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (expandedId === id) {
       setExpandedId(null);
+      setInitialSuggestion(null);
     } else {
       setExpandedId(id);
       setWeight(''); setReps(''); setRpe(null);
       setNextTarget(null); setSuccessMode(false);
+      setInitialSuggestion(null);
+
+      // Buscar sugerencia de autoregulación basada en el último registro de este ejercicio
+      try {
+        const resp = await axios.get(`${BACKEND_URL}/student/${loggedInUser.id}/exercise/${id}/suggestion`);
+        if (resp.data?.suggestion) {
+          setInitialSuggestion({ exerciseId: id, ...resp.data });
+          // Pre-rellenar los inputs con el peso y reps sugeridos
+          setWeight(String(resp.data.suggestion.suggested_weight));
+          setReps(String(resp.data.suggestion.suggested_reps));
+        }
+      } catch (e) {
+        // Sin historial todavía, no pasa nada
+      }
     }
   };
 
@@ -809,7 +888,30 @@ export default function App() {
                     <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700', textTransform: 'uppercase' }}>Ver tutorial del ejercicio</Text>
                   </TouchableOpacity>
 
-                  {/* Sugerencia previa */}
+                  {/* Sugerencia de autoregulación ANTES del primer set */}
+                  {initialSuggestion?.exerciseId === exercise.id && initialSuggestion.suggestion && exercise.setsCompleted === 0 && !nextTarget && (
+                    <View style={[styles.suggestionBox, { borderColor: '#6366F1', backgroundColor: 'rgba(99,102,241,0.08)' }]}>
+                      <Activity color="#6366F1" size={24} />
+                      <View style={{ marginLeft: 12, flex: 1 }}>
+                        <Text style={[styles.suggestionLabel, { color: '#A78BFA' }]}>Autoregulación sugerida</Text>
+                        <Text style={styles.suggestionValue}>
+                          {initialSuggestion.suggestion.suggested_weight} kg × {initialSuggestion.suggestion.suggested_reps} reps
+                        </Text>
+                        {initialSuggestion.last_log && (
+                          <Text style={{ color: '#71717A', fontSize: 11, marginTop: 2 }}>
+                            Última vez: {initialSuggestion.last_log.weight} kg × {initialSuggestion.last_log.reps} reps · RPE {initialSuggestion.last_log.rpe}
+                          </Text>
+                        )}
+                        {initialSuggestion.suggestion.alert_message && (
+                          <Text style={{ color: '#F59E0B', fontSize: 12, marginTop: 4 }}>
+                            {initialSuggestion.suggestion.alert_message}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Sugerencia post-serie (objetivo para el próximo set) */}
                   {nextTarget && (
                     <View style={styles.suggestionBox}>
                       <Trophy color="#F59E0B" size={24} />
@@ -1018,8 +1120,7 @@ export default function App() {
   // PANTALLA: PERFIL
   // =====================================================
   const renderProfile = () => {
-    // Generar un "feed" falso con las fotos de progreso
-    const dummyFeed = Array(9).fill(null);
+    const latestMetric = bodyMetrics.length > 0 ? bodyMetrics[0] : null;
     return (
       <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         {/* Top Section - Avatar and Stats */}
@@ -1066,15 +1167,17 @@ export default function App() {
 
         {/* Bio Section */}
         <View style={{ marginBottom: 20 }}>
-          <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '700' }}>Atleta</Text>
+          <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '700' }}>{loggedInUser?.name || 'Atleta'}</Text>
           <Text style={{ color: '#D4D4D8', fontSize: 14, marginTop: 2 }}>{sessionData?.routine_name || 'Sin rutina asignada'}</Text>
-          <Text style={{ color: '#A1A1AA', fontSize: 14, marginTop: 4 }}>"No hay excusas, solo resultados 🔥"</Text>
         </View>
 
         {/* Action Buttons */}
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
-          <TouchableOpacity style={{ flex: 1, backgroundColor: '#27272A', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}>
-            <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '600' }}>Editar Perfil</Text>
+          <TouchableOpacity
+            style={{ flex: 1, backgroundColor: '#27272A', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}
+            onPress={() => { setProfileTab('metrics'); fetchBodyMetrics(); }}
+          >
+            <Text style={{ color: '#FAFAFA', fontSize: 13, fontWeight: '600' }}>Mis Métricas</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={{ flex: 1, backgroundColor: '#6366F1', paddingVertical: 8, borderRadius: 8, alignItems: 'center' }}
@@ -1089,31 +1192,106 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* Feed Icons */}
+        {/* Tabs */}
         <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#27272A', marginBottom: 2 }}>
-          <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#FAFAFA' }}>
-            <Camera color="#FAFAFA" size={24} />
-          </View>
-          <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
-            <Activity color="#52525B" size={24} />
-          </View>
+          <TouchableOpacity
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: profileTab === 'photos' ? '#FAFAFA' : 'transparent' }}
+            onPress={() => setProfileTab('photos')}
+          >
+            <Camera color={profileTab === 'photos' ? '#FAFAFA' : '#52525B'} size={24} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: profileTab === 'metrics' ? '#6366F1' : 'transparent' }}
+            onPress={() => { setProfileTab('metrics'); fetchBodyMetrics(); }}
+          >
+            <Activity color={profileTab === 'metrics' ? '#6366F1' : '#52525B'} size={24} />
+          </TouchableOpacity>
         </View>
 
-        {/* Grid Feed */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
-          {progressPhotos.length > 0 ? (
-            progressPhotos.map((photo) => (
-              <TouchableOpacity key={photo.id} style={{ width: '33%', aspectRatio: 1, backgroundColor: '#18181B', marginBottom: 2 }} onPress={() => setSelectedPhotoUrl(photo.photo_url)}>
-                <Image source={{ uri: photo.photo_url }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
-              </TouchableOpacity>
-            ))
-          ) : (
-            <View style={{ width: '100%', padding: 40, alignItems: 'center' }}>
-              <Camera color="#3F3F46" size={48} />
-              <Text style={{ color: '#71717A', marginTop: 12 }}>No has subido fotos aún.</Text>
+        {/* Tab: Fotos de progreso */}
+        {profileTab === 'photos' && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'flex-start' }}>
+            {progressPhotos.length > 0 ? (
+              progressPhotos.map((photo) => (
+                <TouchableOpacity key={photo.id} style={{ width: '33%', aspectRatio: 1, backgroundColor: '#18181B', marginBottom: 2 }} onPress={() => setSelectedPhotoUrl(photo.photo_url)}>
+                  <Image source={{ uri: photo.photo_url }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={{ width: '100%', padding: 40, alignItems: 'center' }}>
+                <Camera color="#3F3F46" size={48} />
+                <Text style={{ color: '#71717A', marginTop: 12 }}>No has subido fotos aún.</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Tab: Métricas corporales */}
+        {profileTab === 'metrics' && (
+          <View style={{ paddingTop: 16 }}>
+            {/* Última medición */}
+            {latestMetric && (
+              <View style={{ backgroundColor: '#18181B', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#27272A' }}>
+                <Text style={{ color: '#A1A1AA', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 12 }}>ÚLTIMA MEDICIÓN · {latestMetric.fecha}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                  {latestMetric.peso && <View style={{ alignItems: 'center', minWidth: 60 }}><Text style={{ color: '#FAFAFA', fontSize: 20, fontWeight: '800' }}>{latestMetric.peso}</Text><Text style={{ color: '#71717A', fontSize: 11 }}>kg total</Text></View>}
+                  {latestMetric.masa_muscular && <View style={{ alignItems: 'center', minWidth: 60 }}><Text style={{ color: '#10B981', fontSize: 20, fontWeight: '800' }}>{latestMetric.masa_muscular}</Text><Text style={{ color: '#71717A', fontSize: 11 }}>kg músculo</Text></View>}
+                  {latestMetric.masa_grasa && <View style={{ alignItems: 'center', minWidth: 60 }}><Text style={{ color: '#F59E0B', fontSize: 20, fontWeight: '800' }}>{latestMetric.masa_grasa}</Text><Text style={{ color: '#71717A', fontSize: 11 }}>kg grasa</Text></View>}
+                  {latestMetric.cintura && <View style={{ alignItems: 'center', minWidth: 60 }}><Text style={{ color: '#6366F1', fontSize: 20, fontWeight: '800' }}>{latestMetric.cintura}</Text><Text style={{ color: '#71717A', fontSize: 11 }}>cm cintura</Text></View>}
+                  {latestMetric.cadera && <View style={{ alignItems: 'center', minWidth: 60 }}><Text style={{ color: '#6366F1', fontSize: 20, fontWeight: '800' }}>{latestMetric.cadera}</Text><Text style={{ color: '#71717A', fontSize: 11 }}>cm cadera</Text></View>}
+                </View>
+              </View>
+            )}
+
+            {/* Formulario nueva medición */}
+            <Text style={{ color: '#FAFAFA', fontSize: 15, fontWeight: '700', marginBottom: 12 }}>Registrar nueva medición</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Peso (kg) *</Text>
+                <TextInput style={styles.input} keyboardType="numeric" placeholder="0.0" placeholderTextColor="#52525B" value={metricsForm.peso} onChangeText={v => setMetricsForm(f => ({ ...f, peso: v }))} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Músculo (kg)</Text>
+                <TextInput style={styles.input} keyboardType="numeric" placeholder="0.0" placeholderTextColor="#52525B" value={metricsForm.masa_muscular} onChangeText={v => setMetricsForm(f => ({ ...f, masa_muscular: v }))} />
+              </View>
             </View>
-          )}
-        </View>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Grasa (kg)</Text>
+                <TextInput style={styles.input} keyboardType="numeric" placeholder="0.0" placeholderTextColor="#52525B" value={metricsForm.masa_grasa} onChangeText={v => setMetricsForm(f => ({ ...f, masa_grasa: v }))} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Cintura (cm)</Text>
+                <TextInput style={styles.input} keyboardType="numeric" placeholder="0" placeholderTextColor="#52525B" value={metricsForm.cintura} onChangeText={v => setMetricsForm(f => ({ ...f, cintura: v }))} />
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Cadera (cm)</Text>
+                <TextInput style={styles.input} keyboardType="numeric" placeholder="0" placeholderTextColor="#52525B" value={metricsForm.cadera} onChangeText={v => setMetricsForm(f => ({ ...f, cadera: v }))} />
+              </View>
+              <View style={{ flex: 1 }} />
+            </View>
+            <TouchableOpacity style={styles.saveButton} onPress={saveBodyMetrics} disabled={savingMetrics}>
+              {savingMetrics ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Guardar Métricas</Text>}
+            </TouchableOpacity>
+
+            {/* Historial */}
+            {bodyMetrics.length > 1 && (
+              <View style={{ marginTop: 24 }}>
+                <Text style={{ color: '#A1A1AA', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 10 }}>HISTORIAL</Text>
+                {bodyMetrics.slice(1).map((m, i) => (
+                  <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#27272A' }}>
+                    <Text style={{ color: '#71717A', fontSize: 13 }}>{m.fecha}</Text>
+                    <Text style={{ color: '#FAFAFA', fontSize: 13 }}>{m.peso} kg</Text>
+                    {m.masa_muscular ? <Text style={{ color: '#10B981', fontSize: 13 }}>{m.masa_muscular} mús</Text> : null}
+                    {m.masa_grasa ? <Text style={{ color: '#F59E0B', fontSize: 13 }}>{m.masa_grasa} gras</Text> : null}
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Full Screen Photo Modal */}
         <Modal visible={!!selectedPhotoUrl} transparent={true} animationType="fade" onRequestClose={() => setSelectedPhotoUrl(null)}>
@@ -1135,12 +1313,27 @@ export default function App() {
   // PANTALLA: NUTRICIÓN
   // =====================================================
   const renderNutrition = () => {
-    if (loadingNutrition || !nutritionPlan) {
+    if (loadingNutrition) {
       return (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
           <ActivityIndicator color="#10B981" size="large" />
           <Text style={{ color: '#52525B', marginTop: 12 }}>Cargando plan nutricional...</Text>
         </View>
+      );
+    }
+    if (!nutritionPlan || !nutritionPlan.meals || nutritionPlan.meals.length === 0) {
+      return (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <TouchableOpacity style={styles.backButton} onPress={() => setCurrentScreen('home')}>
+            <ChevronLeft color="#A1A1AA" size={22} />
+            <Text style={styles.backText}>Inicio</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+            <Utensils color="#3F3F46" size={48} />
+            <Text style={{ color: '#A1A1AA', fontSize: 16, fontWeight: '700', marginTop: 16 }}>Sin plan nutricional</Text>
+            <Text style={{ color: '#52525B', fontSize: 14, marginTop: 8, textAlign: 'center' }}>Tu profesor todavía no cargó tu plan. Consultale para que lo configure.</Text>
+          </View>
+        </ScrollView>
       );
     }
 
