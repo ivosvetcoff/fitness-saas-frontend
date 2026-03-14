@@ -288,7 +288,9 @@ export default function App() {
 
   const fetchProgressPhotos = async (studentId) => {
     try {
-      const { data } = await axios.get(`${BACKEND_URL}/student/${studentId}/photos`);
+      const id = studentId || loggedInUser?.id;
+      if (!id) return;
+      const { data } = await axios.get(`${BACKEND_URL}/student/${id}/photos`);
       setProgressPhotos(data || []);
     } catch (e) {
       console.error("Error fetching progress photos:", e);
@@ -337,7 +339,8 @@ export default function App() {
             day_number: ex.day_number,
             day_name: ex.day_name, // Capture day name from backend
             image: EXERCISE_IMAGES[name] || null,
-            repScheme: CUSTOM_REP_SCHEMES[name] || null,
+            repScheme: (ex.reps_per_set ? ex.reps_per_set.replace(/,/g, '-') : null) || CUSTOM_REP_SCHEMES[name] || null,
+            repsPerSet: ex.reps_per_set ? ex.reps_per_set.split(',') : []
           };
         });
         setExercises(allLoadedExercises);
@@ -380,7 +383,7 @@ export default function App() {
     if (!id) return;
     setLoadingNutrition(true);
     try {
-      const response = await axios.get(`${BACKEND_URL}/nutrition/${id}`);
+      const response = await axios.get(`${BACKEND_URL}/student/${id}/nutrition`);
       setNutritionPlan(response.data);
     } catch (error) {
       console.error('Error fetching nutrition:', error);
@@ -402,11 +405,13 @@ export default function App() {
       });
       
       if (response.data && response.data.id) {
+        // Use student_id from backend if available, otherwise fall back to id
+        const effectiveStudentId = response.data.student_id || response.data.id;
         const user = {
-          id: response.data.id,
+          id: effectiveStudentId,
           name: response.data.name,
           username: response.data.email.split('@')[0],
-          student_id: response.data.id
+          student_id: effectiveStudentId
         };
         setLoggedInUser(user);
         setIsAuthenticated(true);
@@ -969,7 +974,7 @@ export default function App() {
           </View>
         ) : (
           rankings.map((r, idx) => {
-            const isMe = r.student_id === STUDENT_ID;
+            const isMe = r.student_id === loggedInUser?.id;
             const emoji = positionEmojis[r.position] || `#${r.position}`;
             return (
               <View
@@ -1046,7 +1051,7 @@ export default function App() {
             </View>
             <View style={{ alignItems: 'center' }}>
               <Text style={{ color: '#FAFAFA', fontSize: 18, fontWeight: '800' }}>
-                {rankings.find(r => r.student_id === STUDENT_ID)?.position || '-'}
+                {rankings.find(r => r.student_id === loggedInUser?.id)?.position || '-'}
               </Text>
               <Text style={{ color: '#71717A', fontSize: 12, fontWeight: '500' }}>Puesto</Text>
             </View>
@@ -1207,17 +1212,25 @@ export default function App() {
 
               {isOpen && (
                 <View style={styles.cardBody}>
-                  {meal.options.map((option, oidx) => (
-                    <View key={oidx} style={{ marginBottom: oidx < meal.options.length - 1 ? 16 : 0 }}>
-                      <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>{option.title}</Text>
-                      {option.items.map((item, iidx) => (
-                        <View key={iidx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6, gap: 8 }}>
-                          <Text style={{ color: '#3F3F46', fontSize: 14 }}>•</Text>
-                          <Text style={{ color: '#D4D4D8', fontSize: 14, flex: 1, lineHeight: 20 }}>{item}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ))}
+                  {meal.text ? (
+                    <Text style={{ color: '#D4D4D8', fontSize: 14, lineHeight: 22 }}>
+                      {meal.text}
+                    </Text>
+                  ) : meal.options && meal.options.length > 0 ? (
+                    meal.options.map((option, oidx) => (
+                      <View key={oidx} style={{ marginBottom: oidx < meal.options.length - 1 ? 16 : 0 }}>
+                        <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700', marginBottom: 8 }}>{option.title}</Text>
+                        {option.items.map((item, iidx) => (
+                          <View key={iidx} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6, gap: 8 }}>
+                            <Text style={{ color: '#3F3F46', fontSize: 14 }}>•</Text>
+                            <Text style={{ color: '#D4D4D8', fontSize: 14, flex: 1, lineHeight: 20 }}>{item}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={{ color: '#52525B', fontSize: 13, fontStyle: 'italic' }}>Sin detalles cargados.</Text>
+                  )}
                 </View>
               )}
             </View>
@@ -1658,7 +1671,10 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setCurrentScreen('profile')}
+          onPress={() => {
+            setCurrentScreen('profile');
+            fetchProgressPhotos();
+          }}
         >
           <User color={currentScreen === 'profile' ? '#6366F1' : '#52525B'} size={22} />
           <Text style={[styles.tabLabel, currentScreen === 'profile' && styles.tabLabelActive]}>Perfil</Text>
