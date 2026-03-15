@@ -17,8 +17,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// API BASE URL - Cambiado a la IP de la computadora para probar desde el celular
-const BACKEND_URL = 'http://192.168.100.8:8000';
+// API BASE URL - Producción en Render
+const BACKEND_URL = 'https://fitness-saas-backend.onrender.com';
 
 // Mapa de imágenes de ejercicios (nombre exacto de la DB → asset local)
 const EXERCISE_IMAGES = {
@@ -64,6 +64,11 @@ const EXERCISE_IMAGES = {
   'Fondos Libres': require('./assets/exercises/extension_triceps.png'),
   'Banco Inclinado Crunch': require('./assets/exercises/crunch_polea.png'),
   'Rodilla al Pecho': require('./assets/exercises/elevaciones_colgado.png'),
+  // === Ejercicios de Agustín ===
+  'Sentadilla en multifuerza': require('./assets/exercises/sentadilla_con_barra.png'),
+  'Elevación pelvis barra': require('./assets/exercises/hip_thrust.png'),
+  'Femoral sentada 1 pierna': require('./assets/exercises/curl_femoral.png'),
+  'Peso muerto barra': require('./assets/exercises/peso_muerto.png'),
   // === Legacy (compatibilidad con ejercicios anteriores) ===
   'Sentadilla con Barra': require('./assets/exercises/sentadilla_con_barra.png'),
   'Press de Banca': require('./assets/exercises/press_de_banca.png'),
