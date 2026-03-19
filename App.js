@@ -168,6 +168,10 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState('');
   const [sessionData, setSessionData] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
@@ -485,19 +489,54 @@ export default function App() {
           setProfilePic(response.data.avatar_url);
         }
 
-        // Fetch data for the logged in user
+        // Cargar datos esenciales con 1 sola llamada al dashboard
+        try {
+          const dashRes = await axios.get(`${BACKEND_URL}/students/${user.id}/dashboard`);
+          const d = dashRes.data;
+          if (d.nutrition) setNutritionPlan(d.nutrition);
+          if (d.metrics) setBodyMetrics(d.metrics);
+        } catch (e) { console.error('Dashboard fetch error:', e); }
+
+        // Cargar ejercicios (necesario para entrenar)
         fetchExercises(user.id);
         fetchMyPoints(user.id);
-        fetchNutritionPlan(user.id);
-        fetchRankings();
-        fetchProgressPhotos(user.id);
-        fetchBodyMetrics(user.id);
+
+        // Rankings y fotos se cargan lazy cuando el usuario navega
+        // fetchRankings();  -- se llama cuando entra a la pestaña
+        // fetchProgressPhotos(user.id);  -- se llama cuando entra a fotos
       }
     } catch (error) {
       console.error("Login error:", error);
       Alert.alert("Error de Login", "Credenciales incorrectas o cuenta inactiva.");
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const email = forgotEmail.trim().toLowerCase();
+    if (!email) {
+      setForgotMessage('Ingresá tu email');
+      return;
+    }
+    setForgotLoading(true);
+    setForgotMessage('');
+    try {
+      const response = await axios.post(`${BACKEND_URL}/auth/forgot-password`, { email });
+      if (response.data?.email_sent) {
+        setForgotMessage('✓ Te enviamos un email con el link para restablecer tu contraseña.');
+      } else {
+        setForgotMessage('✓ Si el email está registrado, recibirás un link.');
+      }
+      setTimeout(() => {
+        setShowForgotPassword(false);
+        setForgotEmail('');
+        setForgotMessage('');
+      }, 3500);
+    } catch (error) {
+      setForgotMessage('Error al enviar. Intentá de nuevo.');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -1750,11 +1789,53 @@ export default function App() {
         >
           {isLoggingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Entrar</Text>}
         </TouchableOpacity>
-        
+
+        <TouchableOpacity onPress={() => { setForgotEmail(loginEmail); setShowForgotPassword(true); }} style={{ marginTop: 16 }}>
+          <Text style={{ color: '#7C3AED', textAlign: 'center', fontSize: 13, fontWeight: '600' }}>¿Olvidaste tu contraseña?</Text>
+        </TouchableOpacity>
+
         <Text style={{ color: '#52525B', textAlign: 'center', marginTop: 20, fontSize: 13 }}>
           ¿No tienes acceso? Consulta con tu profesor.
         </Text>
       </View>
+
+      {/* Modal Forgot Password */}
+      {showForgotPassword && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24, zIndex: 100 }}>
+          <View style={{ backgroundColor: '#18181B', borderRadius: 16, padding: 28, width: '100%', maxWidth: 380, borderWidth: 1, borderColor: 'rgba(124,58,237,0.3)' }}>
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 6 }}>Restablecer contraseña</Text>
+            <Text style={{ color: '#9CA3AF', fontSize: 13, marginBottom: 20, lineHeight: 18 }}>Ingresá tu email y te enviamos un link para crear una nueva contraseña.</Text>
+            <TextInput
+              style={[styles.input, { textAlign: 'left', fontSize: 15, marginBottom: 16 }]}
+              placeholder="tu@email.com"
+              placeholderTextColor="#52525B"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={forgotEmail}
+              onChangeText={setForgotEmail}
+              autoFocus
+            />
+            {forgotMessage ? (
+              <Text style={{ color: forgotMessage.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: 13, textAlign: 'center', marginBottom: 12 }}>{forgotMessage}</Text>
+            ) : null}
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 14, borderRadius: 10, borderWidth: 1, borderColor: '#3F3F46', alignItems: 'center' }}
+                onPress={() => { setShowForgotPassword(false); setForgotMessage(''); setForgotEmail(''); }}
+              >
+                <Text style={{ color: '#9CA3AF', fontWeight: '600', fontSize: 14 }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#7C3AED', alignItems: 'center', opacity: forgotLoading ? 0.6 : 1 }}
+                onPress={handleForgotPassword}
+                disabled={forgotLoading}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>{forgotLoading ? 'Enviando...' : 'Enviar link'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 
