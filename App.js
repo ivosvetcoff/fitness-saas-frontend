@@ -1947,7 +1947,7 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setCurrentScreen('nutrition')}
+          onPress={() => { fetchNutritionPlan(loggedInUser?.id); setCurrentScreen('nutrition'); }}
         >
           <Utensils color={currentScreen === 'nutrition' ? '#10B981' : '#52525B'} size={22} />
           <Text style={[styles.tabLabel, currentScreen === 'nutrition' && { color: '#10B981' }]}>Nutrición</Text>
