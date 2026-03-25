@@ -17,8 +17,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// API BASE URL - Producción en Render
-const BACKEND_URL = 'https://fitness-saas-backend.onrender.com';
+// API BASE URL — configurar en .env (EXPO_PUBLIC_BACKEND_URL)
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://fitness-saas-backend.onrender.com';
 
 // Mapa de imágenes de ejercicios (nombre exacto de la DB → asset local)
 const EXERCISE_IMAGES = {
