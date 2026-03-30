@@ -228,6 +228,9 @@ export default function App() {
   // Body metrics
   const [bodyMetrics, setBodyMetrics] = useState([]);
   const [profileTab, setProfileTab] = useState('photos'); // 'photos' | 'metrics'
+  const [weekTrainingDates, setWeekTrainingDates] = useState([]);
+  const [studentBaseWeight, setStudentBaseWeight] = useState(null);
+  const [studentGoal, setStudentGoal] = useState(null);
   const [savingMetrics, setSavingMetrics] = useState(false);
   const [metricsForm, setMetricsForm] = useState({ peso: '', masa_muscular: '', masa_grasa: '', cintura: '', cadera: '' });
 
@@ -495,6 +498,9 @@ export default function App() {
           const d = dashRes.data;
           if (d.nutrition) setNutritionPlan(d.nutrition);
           if (d.metrics) setBodyMetrics(d.metrics);
+          if (d.weekly_dates) setWeekTrainingDates(d.weekly_dates);
+          if (d.student?.weight_kg) setStudentBaseWeight(parseFloat(d.student.weight_kg));
+          if (d.student?.goal) setStudentGoal(d.student.goal);
           if (!response.data.avatar_url && d.student?.profile_photo_url) {
             setProfilePic(d.student.profile_photo_url);
           }
@@ -762,6 +768,91 @@ export default function App() {
         </View>
       </View>
 
+      {/* CONSISTENCIA SEMANAL */}
+      {(() => {
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        const dow = now.getDay(); // 0=Dom
+        const mondayOffset = dow === 0 ? -6 : 1 - dow;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + mondayOffset);
+        monday.setHours(0, 0, 0, 0);
+        const dayLabels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+        const days = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(monday);
+          d.setDate(monday.getDate() + i);
+          const dateStr = d.toISOString().split('T')[0];
+          const isPast = d < now && dateStr !== todayStr;
+          return {
+            label: dayLabels[i],
+            dateStr,
+            isToday: dateStr === todayStr,
+            isFuture: d > now && dateStr !== todayStr,
+            isPast,
+            trained: weekTrainingDates.includes(dateStr),
+          };
+        });
+        const trainedCount = days.filter(d => d.trained).length;
+        return (
+          <View style={styles.weekCard}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <Text style={styles.weekCardTitle}>Consistencia semanal</Text>
+              <Text style={{ color: '#6366F1', fontSize: 13, fontWeight: '700' }}>{trainedCount}/7 días</Text>
+            </View>
+            <View style={styles.weekDaysRow}>
+              {days.map((day, i) => (
+                <View key={i} style={styles.weekDayCol}>
+                  <Text style={[styles.weekDayLabel, day.isToday && { color: '#6366F1' }]}>{day.label}</Text>
+                  <View style={[
+                    styles.weekDayCircle,
+                    day.trained && styles.weekDayTrained,
+                    day.isToday && !day.trained && styles.weekDayToday,
+                    day.isFuture && styles.weekDayFuture,
+                  ]}>
+                    {day.trained
+                      ? <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>✓</Text>
+                      : <Text style={{ color: day.isFuture ? '#27272A' : '#3F3F46', fontSize: 10 }}>·</Text>
+                    }
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      })()}
+
+      {/* PESO CORPORAL */}
+      {(studentBaseWeight || (bodyMetrics.length > 0 && bodyMetrics[0]?.peso)) && (() => {
+        const latestWeight = bodyMetrics.length > 0 && bodyMetrics[0]?.peso
+          ? parseFloat(bodyMetrics[0].peso)
+          : studentBaseWeight;
+        const delta = studentBaseWeight ? latestWeight - studentBaseWeight : 0;
+        const lossGoal = /p[eé]rdida|definici[oó]n/i.test(studentGoal || '');
+        const gainGoal = /hipertrofia|fuerza|ganancia/i.test(studentGoal || '');
+        const isGood = lossGoal ? delta <= 0 : gainGoal ? delta >= 0 : true;
+        const showDelta = bodyMetrics.length > 0 && studentBaseWeight && Math.abs(delta) > 0.09;
+        const goalEmoji = lossGoal ? '🏃' : gainGoal ? '💪' : '⚖️';
+        return (
+          <View style={styles.weightCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.weightCardLabel}>Peso corporal</Text>
+              <Text style={styles.weightCardValue}>{latestWeight} kg</Text>
+              {showDelta ? (
+                <Text style={{ color: isGood ? '#10B981' : '#EF4444', fontSize: 13, fontWeight: '600', marginTop: 3 }}>
+                  {delta > 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(1)} kg vs inicio
+                </Text>
+              ) : (
+                <Text style={{ color: '#52525B', fontSize: 12, marginTop: 3 }}>Peso al registrarse</Text>
+              )}
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 30 }}>{goalEmoji}</Text>
+              <Text style={{ color: '#52525B', fontSize: 11, fontWeight: '600', marginTop: 4 }}>{studentGoal || 'Sin objetivo'}</Text>
+            </View>
+          </View>
+        );
+      })()}
+
       {/* TARJETA: ENTRENAMIENTO */}
       <TouchableOpacity
         style={styles.mainCard}
@@ -817,8 +908,16 @@ export default function App() {
         </View>
         <View style={styles.mainCardContent}>
           <Text style={styles.mainCardTitle}>Plan Nutricional</Text>
-          <Text style={styles.mainCardSubtitle}>Recomposición corporal</Text>
-          <Text style={styles.mainCardMeta}>5 comidas · suplementos · hidratación</Text>
+          <Text style={styles.mainCardSubtitle}>
+            {nutritionPlan?.meals?.length > 0
+              ? `${nutritionPlan.meals.length} comidas planificadas`
+              : 'Plan nutricional'}
+          </Text>
+          <Text style={styles.mainCardMeta}>
+            {nutritionPlan?.meals?.length > 0
+              ? 'Toca para ver tu plan completo'
+              : 'Tu profe aún no asignó un plan'}
+          </Text>
         </View>
         <ChevronDown color="#52525B" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
       </TouchableOpacity>
@@ -2034,6 +2133,33 @@ const styles = StyleSheet.create({
   },
   statNumber: { color: '#FAFAFA', fontSize: 18, fontWeight: '800' },
   statLabel: { color: '#52525B', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+
+  // WEEKLY CALENDAR
+  weekCard: {
+    backgroundColor: '#18181B', borderRadius: 20, padding: 18,
+    borderWidth: 1, borderColor: '#27272A', marginBottom: 12,
+  },
+  weekCardTitle: { color: '#FAFAFA', fontSize: 15, fontWeight: '700' },
+  weekDaysRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  weekDayCol: { alignItems: 'center', gap: 6 },
+  weekDayLabel: { color: '#52525B', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  weekDayCircle: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#27272A', borderWidth: 1.5, borderColor: '#3F3F46',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  weekDayTrained: { backgroundColor: '#10B981', borderColor: '#10B981' },
+  weekDayToday: { borderColor: '#6366F1', borderWidth: 2 },
+  weekDayFuture: { backgroundColor: '#18181B', borderColor: '#27272A' },
+
+  // WEIGHT CARD
+  weightCard: {
+    backgroundColor: '#18181B', borderRadius: 20, padding: 18,
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1,
+    borderColor: '#27272A', marginBottom: 12,
+  },
+  weightCardLabel: { color: '#71717A', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  weightCardValue: { color: '#FAFAFA', fontSize: 28, fontWeight: '800', marginTop: 4 },
 
   // MAIN CARDS
   mainCard: {
