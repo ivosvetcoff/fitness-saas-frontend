@@ -495,6 +495,9 @@ export default function App() {
           const d = dashRes.data;
           if (d.nutrition) setNutritionPlan(d.nutrition);
           if (d.metrics) setBodyMetrics(d.metrics);
+          if (!response.data.avatar_url && d.student?.profile_photo_url) {
+            setProfilePic(d.student.profile_photo_url);
+          }
         } catch (e) { console.error('Dashboard fetch error:', e); }
 
         // Cargar ejercicios (necesario para entrenar)
@@ -525,14 +528,29 @@ export default function App() {
       const response = await axios.post(`${BACKEND_URL}/auth/forgot-password`, { email });
       if (response.data?.email_sent) {
         setForgotMessage('✓ Te enviamos un email con el link para restablecer tu contraseña.');
+        setTimeout(() => {
+          setShowForgotPassword(false);
+          setForgotEmail('');
+          setForgotMessage('');
+        }, 3500);
+      } else if (response.data?.reset_url) {
+        // El email no se pudo enviar pero tenemos el link — abrirlo directamente en el navegador
+        setForgotMessage('Abriendo el link para restablecer tu contraseña...');
+        setTimeout(() => {
+          const { Linking } = require('react-native');
+          Linking.openURL(response.data.reset_url);
+          setShowForgotPassword(false);
+          setForgotEmail('');
+          setForgotMessage('');
+        }, 800);
       } else {
         setForgotMessage('✓ Si el email está registrado, recibirás un link.');
+        setTimeout(() => {
+          setShowForgotPassword(false);
+          setForgotEmail('');
+          setForgotMessage('');
+        }, 3500);
       }
-      setTimeout(() => {
-        setShowForgotPassword(false);
-        setForgotEmail('');
-        setForgotMessage('');
-      }, 3500);
     } catch (error) {
       setForgotMessage('Error al enviar. Intentá de nuevo.');
     } finally {
