@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView,
-  Platform, ScrollView, LayoutAnimation, UIManager, Image, Linking, Modal
+  Platform, ScrollView, LayoutAnimation, UIManager, Image, Linking, Modal,
+  Animated, Easing
 } from 'react-native';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
@@ -10,7 +11,8 @@ import {
   Play, CheckCircle2, Trophy, Dumbbell, Activity,
   ChevronDown, ChevronUp, Camera, Home, User,
   TrendingUp, ChevronLeft, Utensils, Flame, Calendar,
-  Zap, Target, Users, MessageSquare, Send, MessageCircle, Plus, X
+  Zap, Target, Users, MessageSquare, Send, MessageCircle, Plus, X,
+  Info
 } from 'lucide-react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -94,6 +96,20 @@ const CUSTOM_REP_SCHEMES = {
   'Prensa de Piernas': '20-15-12-10',
   'Empuje de Tríceps': '15-12-10-8',
 };
+
+// Frases motivacionales rotativas
+const MOTIVATIONAL_PHRASES = [
+  { text: 'El dolor es temporal, el orgullo es para siempre.', icon: '💪' },
+  { text: 'No cuentes los días, haz que los días cuenten.', icon: '🔥' },
+  { text: 'Tu único límite sos vos mismo.', icon: '⚡' },
+  { text: 'El éxito empieza cuando decidís no rendirte.', icon: '🏆' },
+  { text: 'Cada repetición te acerca a tu mejor versión.', icon: '🎯' },
+  { text: 'La disciplina vence al talento.', icon: '👊' },
+  { text: 'Hoy es el día que tu futuro yo te va a agradecer.', icon: '🚀' },
+  { text: 'No se trata de ser el mejor, sino de ser mejor que ayer.', icon: '📈' },
+  { text: 'El gimnasio no te pide permiso, te pide compromiso.', icon: '🏋️' },
+  { text: 'Entrená como si tu vida dependiera de ello.', icon: '⚔️' },
+];
 
 // Componente Timer Aislado para evitar re-renders de toda la App
 const WorkoutTimer = () => {
@@ -232,6 +248,11 @@ export default function App() {
   const [studentBaseWeight, setStudentBaseWeight] = useState(null);
   const [studentGoal, setStudentGoal] = useState(null);
   const [savingMetrics, setSavingMetrics] = useState(false);
+  const [streakData, setStreakData] = useState({ streak: 0, at_risk: false, longest_streak: 0, message: '' });
+  const [showStreakModal, setShowStreakModal] = useState(false);
+  const [loadingWorkout, setLoadingWorkout] = useState(false);
+  const streakScale = useRef(new Animated.Value(0)).current;
+  const streakOpacity = useRef(new Animated.Value(0)).current;
   const [metricsForm, setMetricsForm] = useState({ peso: '', masa_muscular: '', masa_grasa: '', cintura: '', cadera: '' });
 
   // Timer
@@ -382,6 +403,7 @@ export default function App() {
   // FETCH DATA
   // =====================================================
   const fetchExercises = async (studentId) => {
+    setLoadingWorkout(true);
     try {
       const id = studentId || loggedInUser?.id;
       if (!id) return;
@@ -398,19 +420,24 @@ export default function App() {
         // Fetch ALL exercises for this routine instead of just the next workout
         const allResp = await axios.get(`${BACKEND_URL}/routines/${response.data.routine_id}/exercises`);
         const allLoadedExercises = allResp.data.map((ex) => {
-          const name = ex.exercises?.name || `Ejercicio ${ex.exercise_id ? ex.exercise_id.substring(0, 4) : '???'}`;
+          const name = ex.exercises?.name || ex.exercises?.nombre || `Ejercicio ${ex.exercise_id ? ex.exercise_id.substring(0, 4) : '???'}`;
           return {
             id: ex.exercise_id,
             routine_id: ex.routine_id,
             name: name,
-            muscleGroup: ex.exercises?.muscle_group || '',
+            muscleGroup: ex.exercises?.muscle_group || ex.exercises?.grupo_muscular || '',
             targetSets: ex.sets || 3,
             setsCompleted: 0,
             day_number: ex.day_number,
-            day_name: ex.day_name, // Capture day name from backend
+            day_name: ex.day_name,
             image: EXERCISE_IMAGES[name] || null,
             repScheme: (ex.reps_per_set ? ex.reps_per_set.replace(/,/g, '-') : null) || CUSTOM_REP_SCHEMES[name] || null,
-            repsPerSet: ex.reps_per_set ? ex.reps_per_set.split(',') : []
+            repsPerSet: ex.reps_per_set ? ex.reps_per_set.split(',') : [],
+            youtube_url: ex.exercises?.youtube_url || null,
+            tecnica_especial: ex.tecnica_especial || null,
+            notas_profesor: ex.notas_profesor || null,
+            descanso_entre_series: ex.descanso_entre_series || null,
+            target_rir: ex.target_rir || ex.rir_objetivo || null,
           };
         });
         setExercises(allLoadedExercises);
@@ -420,6 +447,8 @@ export default function App() {
     } catch (error) {
       console.error("Error fetching exercises:", error);
       setExercises([]);
+    } finally {
+      setLoadingWorkout(false);
     }
   };
   const fetchMyPoints = async (studentId) => {
@@ -487,9 +516,16 @@ export default function App() {
         setIsAuthenticated(true);
         setCurrentScreen('home');
 
-        // Cargar avatar guardado si existe
+        // Cargar avatar guardado si existe (login o users table)
         if (response.data.avatar_url) {
           setProfilePic(response.data.avatar_url);
+        }
+        // Fallback: buscar avatar por endpoint directo
+        if (!response.data.avatar_url) {
+          try {
+            const avatarResp = await axios.get(`${BACKEND_URL}/users/${effectiveStudentId}/profile`);
+            if (avatarResp.data?.avatar_url) setProfilePic(avatarResp.data.avatar_url);
+          } catch (e) { /* sin avatar */ }
         }
 
         // Cargar datos esenciales con 1 sola llamada al dashboard
@@ -503,6 +539,13 @@ export default function App() {
           if (d.student?.goal) setStudentGoal(d.student.goal);
           if (!response.data.avatar_url && d.student?.profile_photo_url) {
             setProfilePic(d.student.profile_photo_url);
+          }
+          // Streak data
+          if (d.streak) {
+            setStreakData(d.streak);
+            if (d.streak.streak >= 3) {
+              setTimeout(() => triggerStreakAnimation(), 800);
+            }
           }
         } catch (e) { console.error('Dashboard fetch error:', e); }
 
@@ -647,12 +690,27 @@ export default function App() {
   };
 
   // =====================================================
+  // STREAK ANIMATION
+  // =====================================================
+  const triggerStreakAnimation = () => {
+    setShowStreakModal(true);
+    streakScale.setValue(0);
+    streakOpacity.setValue(0);
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(streakScale, { toValue: 1, friction: 4, tension: 60, useNativeDriver: true }),
+        Animated.timing(streakOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      ]),
+      Animated.delay(2200),
+      Animated.timing(streakOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(() => setShowStreakModal(false));
+  };
+
+  // =====================================================
   // HANDLERS
   // =====================================================
   const toggleExpand = async (id) => {
-    // Bloquear expansión si el ejercicio ya completó todas sus series
-    const exercise = exercises.find(ex => ex.id === id);
-    if (exercise && exercise.setsCompleted >= exercise.targetSets) return;
+    // Permitir expandir cualquier ejercicio en cualquier orden (la máquina puede estar ocupada)
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (expandedId === id) {
@@ -727,27 +785,54 @@ export default function App() {
   // =====================================================
   // PANTALLA: HOME
   // =====================================================
-  const renderHome = () => (
+  const renderHome = () => {
+    const phrase = MOTIVATIONAL_PHRASES[new Date().getDate() % MOTIVATIONAL_PHRASES.length];
+    return (
     <ScrollView contentContainerStyle={styles.scrollContent} showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-      {/* Header con saludo */}
+      {/* Header con saludo + avatar */}
       <View style={styles.homeHeader}>
         <View style={{ flex: 1 }}>
           <Text style={styles.greetingText}>{greeting()} 👋</Text>
-          <Text style={styles.studentNameText}>Atleta</Text>
+          <Text style={styles.studentNameText}>{loggedInUser?.name || 'Atleta'}</Text>
+        </View>
+        <TouchableOpacity onPress={() => { setCurrentScreen('profile'); fetchProgressPhotos(); }}>
+          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#27272A', overflow: 'hidden', borderWidth: 2, borderColor: '#6366F1', alignItems: 'center', justifyContent: 'center' }}>
+            {profilePic ? (
+              <Image source={{ uri: profilePic }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+            ) : (
+              <User color="#A1A1AA" size={22} />
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Frase motivacional del día */}
+      <View style={styles.motivationalCard}>
+        <Text style={{ fontSize: 28, marginRight: 12 }}>{phrase.icon}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.motivationalText}>{phrase.text}</Text>
+          <Text style={styles.bannerDate}>{today.charAt(0).toUpperCase() + today.slice(1)}</Text>
         </View>
       </View>
 
-      {/* Banner motivacional */}
-      <View style={styles.bannerCard}>
-        <View style={styles.bannerContent}>
-          <Text style={styles.bannerTitle}>No hay excusas.</Text>
-          <Text style={styles.bannerSubtitle}>Solo resultados.</Text>
-          <Text style={styles.bannerDate}>{today.charAt(0).toUpperCase() + today.slice(1)}</Text>
-        </View>
-        <View style={styles.bannerIcon}>
-          <Flame color="#F59E0B" size={48} />
-        </View>
-      </View>
+      {/* Racha de entrenamiento */}
+      {streakData.streak > 0 && (
+        <TouchableOpacity style={styles.streakCard} activeOpacity={0.8} onPress={triggerStreakAnimation}>
+          <View style={styles.streakFireContainer}>
+            <Text style={{ fontSize: 32 }}>🔥</Text>
+          </View>
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={styles.streakNumber}>{streakData.streak} días de racha</Text>
+            <Text style={styles.streakMessage}>{streakData.message}</Text>
+            {streakData.longest_streak > streakData.streak && (
+              <Text style={{ color: '#52525B', fontSize: 11, marginTop: 2 }}>Récord: {streakData.longest_streak} días</Text>
+            )}
+          </View>
+          <View style={styles.streakBadge}>
+            <Flame color="#F59E0B" size={18} />
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* Stats rápidos */}
       <View style={styles.statsRow}>
@@ -762,9 +847,9 @@ export default function App() {
           <Text style={styles.statLabel}>Entreno</Text>
         </View>
         <View style={styles.statCard}>
-          <TrendingUp color="#10B981" size={22} />
-          <Text style={styles.statNumber}>{exercises.length}</Text>
-          <Text style={styles.statLabel}>Ejercicios</Text>
+          <Flame color="#EF4444" size={22} />
+          <Text style={styles.statNumber}>{streakData.streak || 0}</Text>
+          <Text style={styles.statLabel}>Racha</Text>
         </View>
       </View>
 
@@ -897,33 +982,9 @@ export default function App() {
         <ChevronDown color="#52525B" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
       </TouchableOpacity>
 
-      {/* TARJETA: NUTRICIÓN */}
-      <TouchableOpacity
-        style={styles.mainCard}
-        activeOpacity={0.85}
-        onPress={() => setCurrentScreen('nutrition')}
-      >
-        <View style={[styles.mainCardIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-          <Utensils color="#10B981" size={28} />
-        </View>
-        <View style={styles.mainCardContent}>
-          <Text style={styles.mainCardTitle}>Plan Nutricional</Text>
-          <Text style={styles.mainCardSubtitle}>
-            {nutritionPlan?.meals?.length > 0
-              ? `${nutritionPlan.meals.length} comidas planificadas`
-              : 'Plan nutricional'}
-          </Text>
-          <Text style={styles.mainCardMeta}>
-            {nutritionPlan?.meals?.length > 0
-              ? 'Toca para ver tu plan completo'
-              : 'Tu profe aún no asignó un plan'}
-          </Text>
-        </View>
-        <ChevronDown color="#52525B" size={20} style={{ transform: [{ rotate: '-90deg' }] }} />
-      </TouchableOpacity>
-
     </ScrollView>
-  );
+    );
+  };
 
   // =====================================================
   // PANTALLA: WORKOUT (ejercicios del día)
@@ -1036,18 +1097,57 @@ export default function App() {
 
               {isExpanded && (
                 <View style={styles.cardBody}>
-                  {/* Botón de Tutorial */}
-                  <TouchableOpacity
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', backgroundColor: '#27272A',
-                      padding: 12, borderRadius: 12, marginBottom: 16, justifyContent: 'center',
-                      borderWidth: 1, borderColor: '#3F3F46'
-                    }}
-                    onPress={() => Linking.openURL(`https://www.youtube.com/results?search_query=como+hacer+${encodeURIComponent(exercise.name)}+ejercicio`)}
-                  >
-                    <Play color="#10B981" size={18} style={{ marginRight: 8 }} />
-                    <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '700', textTransform: 'uppercase' }}>Ver tutorial del ejercicio</Text>
-                  </TouchableOpacity>
+                  {/* Botones de acción: Instructivo YouTube + Info técnica */}
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                    <TouchableOpacity
+                      style={{
+                        flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#27272A',
+                        padding: 12, borderRadius: 12, justifyContent: 'center',
+                        borderWidth: 1, borderColor: '#3F3F46'
+                      }}
+                      onPress={() => {
+                        const url = exercise.youtube_url || `https://www.youtube.com/results?search_query=como+hacer+${encodeURIComponent(exercise.name)}+ejercicio`;
+                        Linking.openURL(url);
+                      }}
+                    >
+                      <Play color="#EF4444" size={16} style={{ marginRight: 6 }} />
+                      <Text style={{ color: '#FAFAFA', fontSize: 12, fontWeight: '700' }}>Ver Instructivo</Text>
+                    </TouchableOpacity>
+                    {(exercise.tecnica_especial || exercise.notas_profesor) && (
+                      <TouchableOpacity
+                        style={{
+                          flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(99,102,241,0.1)',
+                          padding: 12, borderRadius: 12, justifyContent: 'center',
+                          borderWidth: 1, borderColor: 'rgba(99,102,241,0.3)'
+                        }}
+                        onPress={() => Alert.alert(
+                          exercise.tecnica_especial || 'Nota del profe',
+                          exercise.notas_profesor || exercise.tecnica_especial || ''
+                        )}
+                      >
+                        <Info color="#6366F1" size={16} style={{ marginRight: 6 }} />
+                        <Text style={{ color: '#6366F1', fontSize: 12, fontWeight: '700' }}>
+                          {exercise.tecnica_especial || 'Info'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* RIR / Descanso info bar */}
+                  {(exercise.target_rir || exercise.descanso_entre_series) && (
+                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                      {exercise.target_rir && (
+                        <View style={{ backgroundColor: 'rgba(245,158,11,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
+                          <Text style={{ color: '#F59E0B', fontSize: 12, fontWeight: '700' }}>RIR {exercise.target_rir}</Text>
+                        </View>
+                      )}
+                      {exercise.descanso_entre_series && (
+                        <View style={{ backgroundColor: 'rgba(59,130,246,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
+                          <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '700' }}>{exercise.descanso_entre_series}s descanso</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
 
                   {/* Sugerencia de autoregulación ANTES del primer set */}
                   {initialSuggestion?.exerciseId === exercise.id && initialSuggestion.suggestion && exercise.setsCompleted === 0 && !nextTarget && (
@@ -1097,17 +1197,19 @@ export default function App() {
                     <View>
                       <View style={styles.inputRow}>
                         <View style={styles.inputWrapper}>
-                          <Text style={styles.label}>Peso (kg)</Text>
-                          <TextInput style={styles.input} keyboardType="numeric" placeholder="0"
+                          <Text style={styles.label}>PESO (kg)</Text>
+                          <TextInput style={styles.input} keyboardType="numeric" placeholder="kg"
                             placeholderTextColor="#52525B" value={weight} onChangeText={setWeight} />
+                          <Text style={{ color: '#52525B', fontSize: 10, textAlign: 'center', marginTop: 4 }}>PESO</Text>
                         </View>
                         <View style={styles.inputWrapper}>
                           <Text style={styles.label}>
-                            Reps {exercise.repScheme ? `(Obj: ${exercise.repScheme.split('-')[Math.min(exercise.setsCompleted, (exercise.repScheme.split('-').length || 1) - 1)]})` : ''}
+                            REPS {exercise.repScheme ? `(Obj: ${exercise.repScheme.split('-')[Math.min(exercise.setsCompleted, (exercise.repScheme.split('-').length || 1) - 1)]})` : ''}
                           </Text>
                           <TextInput style={styles.input} keyboardType="numeric"
-                            placeholder={exercise.repScheme ? exercise.repScheme.split('-')[Math.min(exercise.setsCompleted, (exercise.repScheme.split('-').length || 1) - 1)] : "0"}
+                            placeholder={exercise.repScheme ? exercise.repScheme.split('-')[Math.min(exercise.setsCompleted, (exercise.repScheme.split('-').length || 1) - 1)] : "reps"}
                             placeholderTextColor="#52525B" value={reps} onChangeText={setReps} />
+                          <Text style={{ color: '#52525B', fontSize: 10, textAlign: 'center', marginTop: 4 }}>REPS</Text>
                         </View>
                       </View>
 
@@ -1183,6 +1285,15 @@ export default function App() {
   };
 
   const renderWorkout = () => {
+    if (loadingWorkout && exercises.length === 0) {
+      return (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+          <ActivityIndicator color="#6366F1" size="large" />
+          <Text style={{ color: '#6366F1', fontSize: 16, fontWeight: '700', marginTop: 16 }}>Cargando tu plan...</Text>
+          <Text style={{ color: '#52525B', fontSize: 13, marginTop: 8 }}>Preparando tu entrenamiento</Text>
+        </View>
+      );
+    }
     if (!selectedDay) {
       return renderWorkoutDaysList();
     }
@@ -1490,8 +1601,10 @@ export default function App() {
     if (loadingNutrition) {
       return (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-          <ActivityIndicator color="#10B981" size="large" />
-          <Text style={{ color: '#52525B', marginTop: 12 }}>Cargando plan nutricional...</Text>
+          <Utensils color="#10B981" size={40} />
+          <ActivityIndicator color="#10B981" size="large" style={{ marginTop: 16 }} />
+          <Text style={{ color: '#10B981', fontSize: 16, fontWeight: '700', marginTop: 16 }}>Cargando tu plan...</Text>
+          <Text style={{ color: '#52525B', fontSize: 13, marginTop: 8 }}>Preparando tu nutrición</Text>
         </View>
       );
     }
@@ -1979,6 +2092,26 @@ export default function App() {
         renderChatWindow()
       )}
 
+      {/* STREAK ACHIEVEMENT MODAL — TikTok style */}
+      <Modal visible={showStreakModal} transparent animationType="none">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
+          <Animated.View style={{
+            transform: [{ scale: streakScale }],
+            opacity: streakOpacity,
+            alignItems: 'center',
+          }}>
+            <Text style={{ fontSize: 80, marginBottom: 8 }}>🔥</Text>
+            <Text style={{ color: '#F59E0B', fontSize: 52, fontWeight: '900', textShadowColor: 'rgba(245,158,11,0.5)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 20 }}>
+              {streakData.streak} DÍAS
+            </Text>
+            <Text style={{ color: '#FAFAFA', fontSize: 20, fontWeight: '700', marginTop: 4 }}>
+              {streakData.streak >= 20 ? '¡LEYENDA!' : streakData.streak >= 10 ? '¡IMPARABLE!' : streakData.streak >= 5 ? '¡EN RACHA!' : '¡SEGUÍ ASÍ!'}
+            </Text>
+            <Text style={{ color: '#71717A', fontSize: 14, marginTop: 8 }}>Racha de entrenamiento</Text>
+          </Animated.View>
+        </View>
+      </Modal>
+
       {/* Social Modals */}
       <Modal visible={showNewPostModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -2085,7 +2218,13 @@ export default function App() {
             fetchProgressPhotos();
           }}
         >
-          <User color={currentScreen === 'profile' ? '#6366F1' : '#52525B'} size={22} />
+          {profilePic ? (
+            <View style={{ width: 24, height: 24, borderRadius: 12, overflow: 'hidden', borderWidth: 1.5, borderColor: currentScreen === 'profile' ? '#6366F1' : '#52525B' }}>
+              <Image source={{ uri: profilePic }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+            </View>
+          ) : (
+            <User color={currentScreen === 'profile' ? '#6366F1' : '#52525B'} size={22} />
+          )}
           <Text style={[styles.tabLabel, currentScreen === 'profile' && styles.tabLabelActive]}>Perfil</Text>
         </TouchableOpacity>
       </View>}
@@ -2385,5 +2524,33 @@ const styles = StyleSheet.create({
   postImage: { width: '100%', aspectRatio: 1, borderRadius: 16, marginBottom: 16 },
   postActions: { flexDirection: 'row', gap: 16, marginBottom: 16 },
   postActionBtn: { flexDirection: 'row', alignItems: 'center', padding: 8, paddingHorizontal: 12, borderRadius: 12 },
-  postCaption: { paddingTop: 4 }
+  postCaption: { paddingTop: 4 },
+
+  // MOTIVATIONAL CARD
+  motivationalCard: {
+    backgroundColor: '#18181B', borderRadius: 20, padding: 20,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(99,102,241,0.2)', marginBottom: 20,
+  },
+  motivationalText: {
+    color: '#E4E4E7', fontSize: 15, fontWeight: '600', fontStyle: 'italic', lineHeight: 22,
+    marginBottom: 6,
+  },
+
+  // STREAK CARD
+  streakCard: {
+    backgroundColor: 'rgba(245,158,11,0.06)', borderRadius: 20, padding: 18,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.2)', marginBottom: 16,
+  },
+  streakFireContainer: {
+    width: 52, height: 52, borderRadius: 16, backgroundColor: 'rgba(245,158,11,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  streakNumber: { color: '#F59E0B', fontSize: 18, fontWeight: '800' },
+  streakMessage: { color: '#A1A1AA', fontSize: 13, fontWeight: '500', marginTop: 2 },
+  streakBadge: {
+    width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(245,158,11,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
